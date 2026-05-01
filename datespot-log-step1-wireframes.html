@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DateSpot — Log Flow Step 1: Location Picker</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #f2f2f7;
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 56px 24px 48px;
+    min-height: 100vh;
+    color: #1c1c1e;
+  }
+  h1 {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #8e8e93;
+    margin-bottom: 6px;
+  }
+  h2 {
+    font-size: 24px;
+    font-weight: 700;
+    margin-bottom: 48px;
+    color: #1c1c1e;
+  }
+
+  /* iPhone frame */
+  .phone {
+    width: 340px;
+    height: 680px;
+    background: #fff;
+    border-radius: 48px;
+    border: 10px solid #1c1c1e;
+    box-shadow:
+      0 0 0 1px rgba(0,0,0,0.08),
+      0 40px 80px rgba(0,0,0,0.18),
+      0 8px 24px rgba(0,0,0,0.1);
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Dynamic island */
+  .island {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 100px;
+    height: 28px;
+    background: #1c1c1e;
+    border-radius: 20px;
+    z-index: 20;
+  }
+
+  /* Status bar */
+  .status-bar {
+    height: 52px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    padding: 0 24px 8px;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 5;
+  }
+  .status-time {
+    font-size: 15px;
+    font-weight: 600;
+    color: #1c1c1e;
+  }
+  .status-icons {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    font-size: 12px;
+    color: #1c1c1e;
+  }
+
+  /* Map area */
+  .map-area {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    background: #e8edf2;
+  }
+
+  /* Light map tiles */
+  .map-tile {
+    position: absolute;
+    inset: 0;
+  }
+  /* Roads */
+  .road-h {
+    position: absolute;
+    left: 0; right: 0;
+    background: #fff;
+  }
+  .road-v {
+    position: absolute;
+    top: 0; bottom: 0;
+    background: #fff;
+  }
+  .road-minor-h {
+    position: absolute;
+    left: 0; right: 0;
+    background: #f5f5f0;
+  }
+  .road-minor-v {
+    position: absolute;
+    top: 0; bottom: 0;
+    background: #f5f5f0;
+  }
+  /* Blocks */
+  .block {
+    position: absolute;
+    background: #dde3ea;
+    border-radius: 2px;
+  }
+  .park {
+    position: absolute;
+    background: #c8ddc5;
+    border-radius: 3px;
+  }
+  .water {
+    position: absolute;
+    background: #b8d4e8;
+    border-radius: 4px;
+  }
+
+  /* Past visit pins */
+  .pin {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    transform: translate(-50%, -100%);
+  }
+  .pin-dot {
+    width: 26px;
+    height: 26px;
+    border-radius: 50% 50% 50% 0;
+    transform: rotate(-45deg);
+    border: 2.5px solid rgba(255,255,255,0.9);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  }
+  .pin-red { background: #ff3b30; }
+  .pin-green { background: #34c759; }
+  .pin-amber { background: #ff9500; }
+
+  /* Bottom sheet */
+  .sheet {
+    background: #fff;
+    border-radius: 20px 20px 0 0;
+    padding: 12px 20px 32px;
+    box-shadow: 0 -4px 24px rgba(0,0,0,0.08);
+    flex-shrink: 0;
+  }
+  .handle {
+    width: 36px;
+    height: 4px;
+    background: #d1d1d6;
+    border-radius: 2px;
+    margin: 0 auto 20px;
+  }
+  .sheet-title {
+    font-size: 17px;
+    font-weight: 700;
+    color: #1c1c1e;
+    text-align: center;
+    margin-bottom: 6px;
+  }
+  .sheet-subtitle {
+    font-size: 13px;
+    color: #8e8e93;
+    text-align: center;
+    margin-bottom: 24px;
+  }
+
+  /* Circle buttons */
+  .btn-row {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+  }
+  .btn-circle {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .circle {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+  }
+  .circle-blue {
+    background: #e8f0fe;
+    box-shadow: 0 2px 12px rgba(0, 122, 255, 0.15);
+  }
+  .circle-gray {
+    background: #f2f2f7;
+  }
+  .circle-green {
+    background: #e8f8ec;
+  }
+  .btn-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #3a3a3c;
+    text-align: center;
+    line-height: 1.2;
+  }
+  .btn-sublabel {
+    font-size: 11px;
+    color: #8e8e93;
+    text-align: center;
+    margin-top: 2px;
+  }
+
+  /* Annotation */
+  .annotation {
+    max-width: 340px;
+    background: #fff;
+    border: 1px solid #e5e5ea;
+    border-radius: 14px;
+    padding: 16px 18px;
+    margin-top: 20px;
+  }
+  .annotation p {
+    font-size: 13px;
+    line-height: 1.65;
+    color: #48484a;
+  }
+  .annotation strong { color: #1c1c1e; }
+  .annotation ul {
+    margin-top: 10px;
+    padding-left: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .annotation li {
+    font-size: 13px;
+    color: #48484a;
+    line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+
+<h1>DateSpot / design-shotgun</h1>
+<h2>Log Flow — Step 1: Location Picker</h2>
+
+<div class="phone">
+  <div class="island"></div>
+
+  <div class="status-bar">
+    <div class="status-time">9:41</div>
+    <div class="status-icons">
+      <span>●●●</span>
+      <span>WiFi</span>
+      <span>🔋</span>
+    </div>
+  </div>
+
+  <!-- Light map, past visit pins only -->
+  <div class="map-area">
+    <div class="map-tile">
+      <!-- Main roads -->
+      <div class="road-h" style="top:22%;height:6px"></div>
+      <div class="road-h" style="top:50%;height:6px"></div>
+      <div class="road-h" style="top:74%;height:6px"></div>
+      <div class="road-v" style="left:20%;width:6px"></div>
+      <div class="road-v" style="left:52%;width:6px"></div>
+      <div class="road-v" style="left:78%;width:6px"></div>
+      <!-- Minor roads -->
+      <div class="road-minor-h" style="top:35%;height:3px"></div>
+      <div class="road-minor-h" style="top:62%;height:3px"></div>
+      <div class="road-minor-v" style="left:36%;width:3px"></div>
+      <div class="road-minor-v" style="left:66%;width:3px"></div>
+      <!-- Blocks -->
+      <div class="block" style="top:2%;left:2%;width:16%;height:18%"></div>
+      <div class="block" style="top:2%;left:24%;width:26%;height:18%"></div>
+      <div class="block" style="top:2%;left:58%;width:18%;height:18%"></div>
+      <div class="block" style="top:2%;left:82%;width:16%;height:18%"></div>
+      <div class="block" style="top:26%;left:2%;width:16%;height:22%"></div>
+      <div class="park"  style="top:26%;left:24%;width:26%;height:22%"></div>
+      <div class="block" style="top:26%;left:58%;width:18%;height:22%"></div>
+      <div class="block" style="top:26%;left:82%;width:16%;height:22%"></div>
+      <div class="block" style="top:53%;left:2%;width:16%;height:18%"></div>
+      <div class="block" style="top:53%;left:24%;width:26%;height:18%"></div>
+      <div class="water"  style="top:53%;left:58%;width:18%;height:18%"></div>
+      <div class="block" style="top:53%;left:82%;width:16%;height:18%"></div>
+      <div class="block" style="top:77%;left:2%;width:16%;height:20%"></div>
+      <div class="block" style="top:77%;left:24%;width:26%;height:20%"></div>
+      <div class="block" style="top:77%;left:58%;width:18%;height:20%"></div>
+      <div class="block" style="top:77%;left:82%;width:16%;height:20%"></div>
+    </div>
+
+    <!-- Past visit pins (no current location marker) -->
+    <div class="pin" style="top:38%;left:60%">
+      <div class="pin-dot pin-green"></div>
+    </div>
+    <div class="pin" style="top:28%;left:30%">
+      <div class="pin-dot pin-red"></div>
+    </div>
+    <div class="pin" style="top:60%;left:25%">
+      <div class="pin-dot pin-amber"></div>
+    </div>
+    <div class="pin" style="top:65%;left:70%">
+      <div class="pin-dot pin-green"></div>
+    </div>
+    <div class="pin" style="top:22%;left:75%">
+      <div class="pin-dot pin-red"></div>
+    </div>
+  </div>
+
+  <!-- Bottom sheet with circle buttons -->
+  <div class="sheet">
+    <div class="handle"></div>
+    <div class="sheet-title">Where did you go?</div>
+    <div class="sheet-subtitle">Step 1 of 4</div>
+    <div class="btn-row">
+      <div class="btn-circle">
+        <div class="circle circle-blue">📍</div>
+        <div>
+          <div class="btn-label">Use location</div>
+          <div class="btn-sublabel">Where I am now</div>
+        </div>
+      </div>
+      <div class="btn-circle">
+        <div class="circle circle-gray">🗺</div>
+        <div>
+          <div class="btn-label">Drop a pin</div>
+          <div class="btn-sublabel">Tap on the map</div>
+        </div>
+      </div>
+      <div class="btn-circle">
+        <div class="circle circle-green">🔍</div>
+        <div>
+          <div class="btn-label">Search</div>
+          <div class="btn-sublabel">Venues &amp; places</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="annotation">
+  <p><strong>Design decisions:</strong></p>
+  <ul>
+    <li><strong>No current location dot.</strong> Users log after the date — they're home, not at the venue. The map shows past visit pins instead, which gives the map life without implying GPS relevance.</li>
+    <li><strong>Past pins only.</strong> Red/amber/green colored pins showing historical visits. Empty map on first install; fills as the user logs more dates.</li>
+    <li><strong>Three circle buttons, equal weight.</strong> No single action is forced as primary — users who want to search for a venue search, users who remember the street corner drop a pin, users who are still there use location.</li>
+    <li><strong>Light map background.</strong> White/grey Apple Maps palette. Clean, legible, doesn't compete with the pins or the sheet.</li>
+  </ul>
+</div>
+
+<div style="margin-top: 32px; text-align: center; color: #aeaeb2; font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase;">
+  DateSpot / design-shotgun / Log Flow Step 1 &nbsp;·&nbsp; 2026-04-30
+</div>
+
+</body>
+</html>
