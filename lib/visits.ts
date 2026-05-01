@@ -20,7 +20,6 @@ export interface NewVisit {
   lat: number;
   lng: number;
   visited_at: string;
-  rating: Rating;
   rank_order: number;
   notes?: string;
 }
@@ -34,22 +33,33 @@ export function getAllVisits(): Visit[] {
 
 export function insertVisit(v: NewVisit): void {
   const db = getDb();
+  // Insert with placeholder rating; recomputeRatings sets the real value
   db.runSync(
     `INSERT INTO visits (id, venue_name, lat, lng, visited_at, rating, rank_order, notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [v.id, v.venue_name, v.lat, v.lng, v.visited_at, v.rating, v.rank_order, v.notes ?? null]
+     VALUES (?, ?, ?, ?, ?, 1, ?, ?)`,
+    [v.id, v.venue_name, v.lat, v.lng, v.visited_at, v.rank_order, v.notes ?? null]
   );
+  recomputeRatings();
 }
 
-export function getVisitsSortedByRank(): Visit[] {
+// Recompute 1/2/3 ratings for every visit based on rank_order percentile.
+// Bottom third → 1, middle → 2, top third → 3.
+// Called after every insert so pin colors stay accurate as the list grows.
+export function recomputeRatings(): void {
   const db = getDb();
-  return db.getAllSync<Visit>(
-    'SELECT * FROM visits ORDER BY rank_order DESC'
+  const visits = db.getAllSync<{ id: string; rank_order: number }>(
+    'SELECT id, rank_order FROM visits ORDER BY rank_order ASC'
   );
+  if (visits.length === 0) return;
+
+  const n = visits.length;
+  visits.forEach((v, i) => {
+    const pct = n === 1 ? 1 : i / (n - 1);
+    const rating: Rating = pct >= 0.67 ? 3 : pct >= 0.34 ? 2 : 1;
+    db.runSync('UPDATE visits SET rating = ? WHERE id = ?', [rating, v.id]);
+  });
 }
 
-// Used by the comparison rating engine to recompute rank_order for all visits
-// after inserting a new one at a given fractional index position.
 export function updateRankOrder(id: string, rank_order: number): void {
   const db = getDb();
   db.runSync('UPDATE visits SET rank_order = ? WHERE id = ?', [rank_order, id]);
@@ -57,8 +67,8 @@ export function updateRankOrder(id: string, rank_order: number): void {
 
 export function ratingColor(rating: Rating): string {
   switch (rating) {
-    case 3: return '#34c759'; // green
-    case 2: return '#ff9500'; // amber
-    case 1: return '#ff3b30'; // red
+    case 3: return '#34c759';
+    case 2: return '#ff9500';
+    case 1: return '#ff3b30';
   }
 }

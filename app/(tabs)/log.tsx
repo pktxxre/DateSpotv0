@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   StyleSheet,
   View,
@@ -7,7 +7,6 @@ import {
   TextInput,
   Alert,
   ScrollView,
-  Platform,
 } from 'react-native';
 import MapView, { Marker, Region, MapPressEvent } from 'react-native-maps';
 import BottomSheet, { BottomSheetView } from '@gorhom/bottom-sheet';
@@ -23,6 +22,7 @@ import {
   currentComparison,
   ComparisonState,
 } from '@/lib/ranking';
+import { saveDraft, loadDraft, clearDraft } from '@/lib/draft';
 
 const SF_REGION: Region = {
   latitude: 37.7749,
@@ -52,15 +52,46 @@ export default function LogScreen() {
   useFocusEffect(
     useCallback(() => {
       setVisits(getAllVisits());
-      resetFlow();
+      // Restore draft if one exists from a previous interrupted session
+      loadDraft().then((saved) => {
+        if (saved && saved.step !== 'done') {
+          Alert.alert(
+            'Resume logging?',
+            `You were logging "${saved.venue_name || 'a spot'}" — continue?`,
+            [
+              { text: 'Start fresh', style: 'destructive', onPress: () => { clearDraft(); resetFlow(); } },
+              {
+                text: 'Resume', onPress: () => {
+                  setDraft({
+                    lat: saved.lat,
+                    lng: saved.lng,
+                    venue_name: saved.venue_name,
+                    visited_at: saved.visited_at,
+                    notes: saved.notes,
+                  });
+                  setStep(saved.step === 'compare' ? 'details' : saved.step);
+                  sheetRef.current?.snapToIndex(1);
+                }
+              },
+            ]
+          );
+        }
+      });
     }, [])
   );
+
+  // Persist draft whenever step or draft changes
+  useEffect(() => {
+    if (step === 'location') return; // nothing worth saving yet
+    saveDraft({ ...draft, step, savedAt: new Date().toISOString() });
+  }, [step, draft]);
 
   function resetFlow() {
     setStep('location');
     setDraft({});
     setDroppingPin(false);
     setCmpState(null);
+    clearDraft();
     sheetRef.current?.snapToIndex(0);
   }
 
@@ -129,17 +160,12 @@ export default function LogScreen() {
   function saveVisit(rank_order: number) {
     if (!draft.lat || !draft.lng || !draft.venue_name) return;
 
-    // Derive a simple 1-3 rating from rank_order position among all visits
-    const existing = getAllVisits();
-    const rating = deriveRating(rank_order, existing);
-
     insertVisit({
       id: Crypto.randomUUID(),
       venue_name: draft.venue_name.trim(),
       lat: draft.lat,
       lng: draft.lng,
       visited_at: draft.visited_at || new Date().toISOString(),
-      rating,
       rank_order,
       notes: draft.notes || undefined,
     });
@@ -147,18 +173,6 @@ export default function LogScreen() {
     setVisits(getAllVisits());
     setStep('done');
     sheetRef.current?.snapToIndex(1);
-  }
-
-  // Assign a 1/2/3 rating based on where the visit lands in the overall ranking.
-  // Bottom third = 1 (bad), middle = 2 (ok), top third = 3 (great).
-  // With 0 existing visits this is called with rank_order=1000 → rating 3.
-  function deriveRating(rank_order: number, existing: Visit[]): 1 | 2 | 3 {
-    const all = [...existing.map((v) => v.rank_order), rank_order].sort((a, b) => a - b);
-    const pos = all.indexOf(rank_order);
-    const pct = all.length === 1 ? 1 : pos / (all.length - 1);
-    if (pct >= 0.67) return 3;
-    if (pct >= 0.34) return 2;
-    return 1;
   }
 
   const snapPoints = ['30%', '65%'];
