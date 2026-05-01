@@ -40,7 +40,7 @@ const SF_REGION: Region = {
   longitudeDelta: 0.08,
 };
 
-type Step = 'location' | 'details' | 'compare' | 'done';
+type Step = 'location' | 'details' | 'triage' | 'compare' | 'done';
 
 interface DraftVisit {
   lat: number;

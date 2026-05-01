@@ -105,7 +105,7 @@ export function recomputeRatings(): void {
   const n = visits.length;
   visits.forEach((v, i) => {
     const pct = n === 1 ? 1 : i / (n - 1);
-    const rating = Math.round(pct * 9) + 1; // 1–10 scale
+    const rating = Math.round(pct * 100) / 10; // 0.0–10.0, one decimal
     db.runSync('UPDATE visits SET rating = ? WHERE id = ?', [rating, v.id]);
   });
 }
@@ -116,7 +116,11 @@ export function updateRankOrder(id: string, rank_order: number): void {
 }
 
 export function ratingColor(rating: number): string {
-  if (rating >= 7) return '#34c759';
-  if (rating >= 4) return '#ff9500';
+  if (rating >= 7.0) return '#34c759';
+  if (rating >= 4.0) return '#ff9500';
   return '#ff3b30';
+}
+
+export function formatRating(rating: number): string {
+  return rating.toFixed(1);
 }

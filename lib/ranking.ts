@@ -1,33 +1,59 @@
-import { Visit } from './visits';
+import { ActivityType, Visit } from './visits';
 
 export interface ComparisonState {
-  lo: number;        // index into sorted array (inclusive)
-  hi: number;        // index into sorted array (exclusive)
-  mid: number;       // current comparison index
-  count: number;     // comparisons made so far
-  sorted: Visit[];   // existing visits sorted by rank_order desc
+  lo: number;       // index into sorted (inclusive lower bound)
+  hi: number;       // index into sorted (exclusive upper bound)
+  mid: number;      // index of current comparison target
+  count: number;    // comparisons made so far
+  sorted: Visit[];  // pool used for this session (may be category-filtered)
 }
 
 export type ComparisonResult = 'better' | 'worse';
+export type Triage = 'bad' | 'okay' | 'great';
 
 const MAX_COMPARISONS = 7;
+const CATEGORY_THRESHOLD = 5; // min spots in category before category-only mode kicks in
 
-// Start a new comparison session for a new visit being inserted.
-// Returns null if there are no existing visits (no comparisons needed).
-export function startComparison(existing: Visit[]): ComparisonState | null {
+export function startComparison(
+  existing: Visit[],
+  activityType?: ActivityType,
+  triage?: Triage
+): ComparisonState | null {
   if (existing.length === 0) return null;
 
-  const sorted = [...existing].sort((a, b) => b.rank_order - a.rank_order);
-  const lo = 0;
-  const hi = sorted.length;
-  const mid = Math.floor((lo + hi) / 2);
+  // Category-aware: use category pool if we have enough data in that category
+  let pool = existing;
+  if (activityType) {
+    const categoryPool = existing.filter((v) => v.activity_type === activityType);
+    if (categoryPool.length >= CATEGORY_THRESHOLD) {
+      pool = categoryPool;
+    }
+  }
 
+  const sorted = [...pool].sort((a, b) => b.rank_order - a.rank_order);
+  const n = sorted.length;
+
+  // Triage seeds the search region (sorted is DESC: index 0 = best, n-1 = worst)
+  let lo = 0;
+  let hi = n;
+  if (triage && n >= 2) {
+    if (triage === 'great') {
+      hi = Math.max(1, Math.ceil(n / 3));
+    } else if (triage === 'okay') {
+      lo = Math.floor(n / 3);
+      hi = Math.ceil((2 * n) / 3);
+    } else {
+      lo = Math.floor((2 * n) / 3);
+    }
+    // Guard: ensure hi > lo
+    if (hi <= lo) hi = lo + 1;
+    if (hi > n) hi = n;
+  }
+
+  const mid = Math.floor((lo + hi) / 2);
   return { lo, hi, mid, count: 0, sorted };
 }
 
-// Advance the comparison state based on whether the new visit is
-// better or worse than the visit at state.mid.
-// Returns the updated state, or null if comparison is complete.
 export function advance(
   state: ComparisonState,
   result: ComparisonResult
@@ -39,11 +65,9 @@ export function advance(
   let nextHi = hi;
 
   if (result === 'better') {
-    // New visit is better than sorted[mid], so it belongs in the upper half
-    nextHi = mid;
+    nextHi = mid; // new spot belongs above mid
   } else {
-    // New visit is worse than sorted[mid], so it belongs in the lower half
-    nextLo = mid + 1;
+    nextLo = mid + 1; // new spot belongs below mid
   }
 
   const nextMid = Math.floor((nextLo + nextHi) / 2);
@@ -54,37 +78,33 @@ export function advance(
   return { lo: nextLo, hi: nextHi, mid: nextMid, count: nextCount, sorted };
 }
 
-// Compute the final rank_order for the new visit, given the final state.
-// Uses fractional indexing: place the new visit between its neighbors.
+// Resolve rank_order at the natural end of comparison (uses state.lo as insertion point).
+// Uses state.sorted so category-filtered sessions stay consistent.
 export function resolveRankOrder(state: ComparisonState | null, existing: Visit[]): number {
   if (existing.length === 0) return 1000;
 
-  const sorted = [...existing].sort((a, b) => b.rank_order - a.rank_order);
-
   if (state === null) {
-    // No comparisons happened — shouldn't occur with existing visits, but be safe
+    const sorted = [...existing].sort((a, b) => b.rank_order - a.rank_order);
     return sorted[0].rank_order + 1;
   }
 
-  const insertAt = state.lo; // insert before this index in sorted desc array
+  const { sorted, lo } = state;
+  return rankOrderAt(sorted, lo);
+}
 
-  if (insertAt === 0) {
-    // Better than everything — place above the best
-    return sorted[0].rank_order + 1000;
-  }
+// Resolve rank_order at the current mid — used by the "Too hard" button.
+export function resolveAtMid(state: ComparisonState, existing: Visit[]): number {
+  return rankOrderAt(state.sorted, state.mid);
+}
 
-  if (insertAt >= sorted.length) {
-    // Worse than everything — place below the worst
-    return sorted[sorted.length - 1].rank_order - 1000;
-  }
-
-  // Between two existing visits
+function rankOrderAt(sorted: Visit[], insertAt: number): number {
+  if (insertAt === 0) return sorted[0].rank_order + 1000;
+  if (insertAt >= sorted.length) return sorted[sorted.length - 1].rank_order - 1000;
   const above = sorted[insertAt - 1].rank_order;
   const below = sorted[insertAt].rank_order;
   return (above + below) / 2;
 }
 
-// The visit to show for the current comparison step
 export function currentComparison(state: ComparisonState): Visit {
   return state.sorted[state.mid];
 }

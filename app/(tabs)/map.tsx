@@ -9,12 +9,12 @@ import { useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Crypto from 'expo-crypto';
 import {
-  getAllVisits, insertVisit, ratingColor, Visit,
+  getAllVisits, insertVisit, ratingColor, formatRating, Visit,
   ActivityType, Price, ACTIVITY_TYPES, PRICE_LABELS,
 } from '@/lib/visits';
 import {
-  startComparison, advance, resolveRankOrder,
-  currentComparison, ComparisonState,
+  startComparison, advance, resolveRankOrder, resolveAtMid,
+  currentComparison, ComparisonState, Triage,
 } from '@/lib/ranking';
 import { saveDraft, loadDraft, clearDraft } from '@/lib/draft';
 
@@ -25,7 +25,7 @@ const SF_REGION: Region = {
   longitudeDelta: 0.08,
 };
 
-type Step = 'location' | 'details' | 'compare' | 'done';
+type Step = 'location' | 'details' | 'triage' | 'compare' | 'done';
 
 interface DraftVisit {
   lat: number;
@@ -66,8 +66,10 @@ export default function MapScreen() {
                     visited_at: saved.visited_at,
                     notes: saved.notes,
                   });
-                  const resumeStep = saved.step === 'compare' ? 'details' : saved.step;
-                  setStep(resumeStep as Step);
+                  const resumeStep: Step = saved.step === 'compare' || saved.step === 'triage'
+                    ? 'details'
+                    : saved.step as Step;
+                  setStep(resumeStep);
                   sheetRef.current?.snapToIndex(1);
                 }
               },
@@ -140,7 +142,17 @@ export default function MapScreen() {
       return;
     }
     const existing = getAllVisits();
-    const initial = startComparison(existing);
+    if (existing.length === 0) {
+      saveVisit(1000);
+      return;
+    }
+    setStep('triage');
+    sheetRef.current?.snapToIndex(1);
+  }
+
+  function handleTriage(triage: Triage) {
+    const existing = getAllVisits();
+    const initial = startComparison(existing, draft.activity_type, triage);
     setCmpState(initial);
     if (initial === null) {
       saveVisit(1000);
@@ -159,6 +171,13 @@ export default function MapScreen() {
     } else {
       setCmpState(next);
     }
+  }
+
+  function handleTooHard() {
+    if (!cmpState) return;
+    const existing = getAllVisits();
+    const rank_order = resolveAtMid(cmpState, existing);
+    saveVisit(rank_order);
   }
 
   function saveVisit(rank_order: number) {
@@ -204,7 +223,7 @@ export default function MapScreen() {
             onPress={() => handlePinPress(v)}
           >
             <View style={[styles.pinBadge, { backgroundColor: ratingColor(v.rating) }]}>
-              <Text style={styles.pinScore}>{v.rating}</Text>
+              <Text style={styles.pinScore}>{formatRating(v.rating)}</Text>
             </View>
           </Marker>
         ))}
@@ -260,6 +279,9 @@ export default function MapScreen() {
               onBack={() => sheetRef.current?.close()}
             />
           )}
+          {step === 'triage' && (
+            <TriageStep onPick={handleTriage} />
+          )}
           {step === 'compare' && cmpState && (
             <CompareStep
               newVenueName={draft.venue_name || ''}
@@ -267,7 +289,8 @@ export default function MapScreen() {
               comparisonNumber={cmpState.count + 1}
               onBetter={() => handleCompare('better')}
               onWorse={() => handleCompare('worse')}
-              onBack={() => { setStep('details'); sheetRef.current?.snapToIndex(1); }}
+              onTooHard={handleTooHard}
+              onBack={() => { setStep('triage'); sheetRef.current?.snapToIndex(1); }}
             />
           )}
           {step === 'done' && (
@@ -294,8 +317,8 @@ function VisitDetail({ visit, onClose }: { visit: Visit; onClose: () => void }) 
         </Pressable>
       </View>
       <View style={styles.detailMeta}>
-        <View style={[styles.detailScore, { backgroundColor: ratingColor(visit.rating) }]}>
-          <Text style={styles.detailScoreText}>{visit.rating}</Text>
+        <View style={[styles.detailScorePill, { backgroundColor: ratingColor(visit.rating) }]}>
+          <Text style={styles.detailScoreText}>{formatRating(visit.rating)}</Text>
         </View>
         <Text style={styles.detailMetaText}>{info?.emoji} {info?.label}</Text>
         <Text style={styles.detailMetaDot}>·</Text>
@@ -314,7 +337,7 @@ function LocationStep({ onUseLocation, onDropPin, onSearch }: {
   return (
     <View style={styles.stepContainer}>
       <Text style={styles.stepTitle}>Where did you go?</Text>
-      <Text style={styles.stepSubtitle}>Step 1 of 4</Text>
+      <Text style={styles.stepSubtitle}>Step 1 of 5</Text>
       <View style={styles.circleRow}>
         <CircleButton icon="location" label="Use location" sublabel="Where I am now" onPress={onUseLocation} tint="#e8f0fe" />
         <CircleButton icon="map" label="Drop a pin" sublabel="Tap the map" onPress={onDropPin} tint="#f2f2f7" />
@@ -347,7 +370,7 @@ function DetailsStep({ draft, onChange, onNext, onBack }: {
   return (
     <ScrollView style={styles.stepContainer} keyboardShouldPersistTaps="handled">
       <Text style={styles.stepTitle}>Tell me about it</Text>
-      <Text style={styles.stepSubtitle}>Step 2 of 4</Text>
+      <Text style={styles.stepSubtitle}>Step 2 of 5</Text>
 
       <TextInput
         style={styles.input}
@@ -426,14 +449,37 @@ function DetailsStep({ draft, onChange, onNext, onBack }: {
   );
 }
 
-function CompareStep({ newVenueName, opponent, comparisonNumber, onBetter, onWorse, onBack }: {
+function TriageStep({ onPick }: { onPick: (t: Triage) => void }) {
+  return (
+    <View style={styles.stepContainer}>
+      <Text style={styles.stepTitle}>First impression?</Text>
+      <Text style={styles.stepSubtitle}>Step 3 of 5 · Narrows your comparisons</Text>
+      <View style={styles.triageRow}>
+        <Pressable style={[styles.triageBtn, { backgroundColor: '#fff2f2', borderColor: '#ff3b30' }]} onPress={() => onPick('bad')}>
+          <Text style={styles.triageEmoji}>😬</Text>
+          <Text style={[styles.triageLabel, { color: '#ff3b30' }]}>Bad</Text>
+        </Pressable>
+        <Pressable style={[styles.triageBtn, { backgroundColor: '#fff8ee', borderColor: '#ff9500' }]} onPress={() => onPick('okay')}>
+          <Text style={styles.triageEmoji}>😐</Text>
+          <Text style={[styles.triageLabel, { color: '#ff9500' }]}>Okay</Text>
+        </Pressable>
+        <Pressable style={[styles.triageBtn, { backgroundColor: '#f0fff4', borderColor: '#34c759' }]} onPress={() => onPick('great')}>
+          <Text style={styles.triageEmoji}>🤩</Text>
+          <Text style={[styles.triageLabel, { color: '#34c759' }]}>Great</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function CompareStep({ newVenueName, opponent, comparisonNumber, onBetter, onWorse, onTooHard, onBack }: {
   newVenueName: string; opponent: Visit; comparisonNumber: number;
-  onBetter: () => void; onWorse: () => void; onBack: () => void;
+  onBetter: () => void; onWorse: () => void; onTooHard: () => void; onBack: () => void;
 }) {
   return (
     <View style={styles.stepContainer}>
       <Text style={styles.stepTitle}>Which was better?</Text>
-      <Text style={styles.stepSubtitle}>Ranking · {comparisonNumber} of up to 7</Text>
+      <Text style={styles.stepSubtitle}>Step 4 of 5 · Comparison {comparisonNumber} of up to 7</Text>
       <View style={styles.compareRow}>
         <Pressable style={[styles.compareCard, styles.compareCardNew]} onPress={onBetter}>
           <Text style={styles.compareCardEmoji}>✨</Text>
@@ -442,15 +488,18 @@ function CompareStep({ newVenueName, opponent, comparisonNumber, onBetter, onWor
         </Pressable>
         <View style={styles.compareVs}><Text style={styles.compareVsText}>vs</Text></View>
         <Pressable style={[styles.compareCard, styles.compareCardOld]} onPress={onWorse}>
-          <View style={[styles.compareCardBadge, { backgroundColor: ratingColor(opponent.rating) }]}>
-            <Text style={styles.compareCardBadgeText}>{opponent.rating}</Text>
+          <View style={[styles.compareCardScorePill, { backgroundColor: ratingColor(opponent.rating) }]}>
+            <Text style={styles.compareCardScoreText}>{formatRating(opponent.rating)}</Text>
           </View>
           <Text style={styles.compareCardName} numberOfLines={2}>{opponent.venue_name}</Text>
           <Text style={styles.compareCardLabel}>That one</Text>
         </Pressable>
       </View>
+      <Pressable style={styles.tooHardBtn} onPress={onTooHard}>
+        <Text style={styles.tooHardText}>Too hard to compare</Text>
+      </Pressable>
       <Pressable style={styles.btnSecondaryCenter} onPress={onBack}>
-        <Text style={styles.btnSecondaryText}>Back to details</Text>
+        <Text style={styles.btnSecondaryText}>Back to impression</Text>
       </Pressable>
     </View>
   );
@@ -481,14 +530,14 @@ const styles = StyleSheet.create({
   map: { flex: 1 },
 
   pinBadge: {
-    minWidth: 28, height: 28, borderRadius: 14,
-    paddingHorizontal: 6,
+    minWidth: 40, height: 26, borderRadius: 13,
+    paddingHorizontal: 7,
     alignItems: 'center', justifyContent: 'center',
     borderWidth: 2, borderColor: '#fff',
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25, shadowRadius: 4,
   },
-  pinScore: { fontSize: 13, fontWeight: '800', color: '#fff' },
+  pinScore: { fontSize: 12, fontWeight: '800', color: '#fff' },
 
   pinHint: {
     position: 'absolute', top: 60, alignSelf: 'center',
@@ -499,19 +548,18 @@ const styles = StyleSheet.create({
 
   detailCard: {
     position: 'absolute', bottom: 90, left: 16, right: 16,
-    backgroundColor: '#fff', borderRadius: 16,
-    padding: 16,
+    backgroundColor: '#fff', borderRadius: 16, padding: 16,
     shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.12, shadowRadius: 12, elevation: 6,
   },
   detailHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, gap: 8 },
   detailName: { flex: 1, fontSize: 16, fontWeight: '700', color: '#1c1c1e' },
   detailMeta: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  detailScore: {
-    width: 32, height: 32, borderRadius: 16,
+  detailScorePill: {
+    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12,
     alignItems: 'center', justifyContent: 'center',
   },
-  detailScoreText: { fontSize: 14, fontWeight: '800', color: '#fff' },
+  detailScoreText: { fontSize: 13, fontWeight: '800', color: '#fff' },
   detailMetaText: { fontSize: 14, color: '#3a3a3c' },
   detailMetaDot: { fontSize: 14, color: '#c7c7cc' },
   detailNotes: { fontSize: 13, color: '#8e8e93', marginTop: 10, lineHeight: 18 },
@@ -575,28 +623,41 @@ const styles = StyleSheet.create({
   },
   inputMultiline: { minHeight: 80, textAlignVertical: 'top' },
 
-  btnRow: { flexDirection: 'row', gap: 12, marginTop: 8 },
-  btnPrimary: { flex: 1, backgroundColor: '#ff3b5c', borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
-  btnPrimaryText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  btnSecondary: { flex: 1, backgroundColor: '#f2f2f7', borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
-  btnSecondaryCenter: { backgroundColor: '#f2f2f7', borderRadius: 14, paddingVertical: 14, alignItems: 'center', marginTop: 16 },
-  btnSecondaryText: { color: '#1c1c1e', fontSize: 16, fontWeight: '600' },
+  triageRow: { flexDirection: 'row', gap: 12 },
+  triageBtn: {
+    flex: 1, borderRadius: 16, paddingVertical: 20,
+    alignItems: 'center', gap: 8,
+    borderWidth: 2,
+  },
+  triageEmoji: { fontSize: 32 },
+  triageLabel: { fontSize: 15, fontWeight: '700' },
 
-  compareRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 8 },
+  compareRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
   compareCard: { flex: 1, borderRadius: 16, padding: 16, alignItems: 'center', gap: 8, minHeight: 120, justifyContent: 'center' },
   compareCardNew: { backgroundColor: '#fff5f7', borderWidth: 2, borderColor: '#ff3b5c' },
   compareCardOld: { backgroundColor: '#f2f2f7', borderWidth: 2, borderColor: '#e5e5ea' },
   compareCardEmoji: { fontSize: 24 },
-  compareCardBadge: {
-    width: 36, height: 36, borderRadius: 18,
-    alignItems: 'center', justifyContent: 'center',
-    borderWidth: 2, borderColor: '#fff',
+  compareCardScorePill: {
+    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12,
   },
-  compareCardBadgeText: { fontSize: 14, fontWeight: '800', color: '#fff' },
+  compareCardScoreText: { fontSize: 13, fontWeight: '800', color: '#fff' },
   compareCardName: { fontSize: 14, fontWeight: '700', color: '#1c1c1e', textAlign: 'center', lineHeight: 18 },
   compareCardLabel: { fontSize: 11, color: '#8e8e93', fontWeight: '500' },
   compareVs: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#f2f2f7', alignItems: 'center', justifyContent: 'center' },
   compareVsText: { fontSize: 12, fontWeight: '700', color: '#8e8e93' },
+
+  tooHardBtn: {
+    backgroundColor: '#f2f2f7', borderRadius: 14,
+    paddingVertical: 12, alignItems: 'center', marginBottom: 8,
+  },
+  tooHardText: { fontSize: 14, fontWeight: '600', color: '#8e8e93' },
+
+  btnRow: { flexDirection: 'row', gap: 12, marginTop: 8 },
+  btnPrimary: { flex: 1, backgroundColor: '#ff3b5c', borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
+  btnPrimaryText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  btnSecondary: { flex: 1, backgroundColor: '#f2f2f7', borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
+  btnSecondaryCenter: { backgroundColor: '#f2f2f7', borderRadius: 14, paddingVertical: 14, alignItems: 'center', marginTop: 8 },
+  btnSecondaryText: { color: '#1c1c1e', fontSize: 16, fontWeight: '600' },
 
   doneContainer: { alignItems: 'center', paddingTop: 16 },
   doneEmoji: { fontSize: 48, marginBottom: 12 },

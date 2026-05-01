@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react';
 import { StyleSheet, View, Text, ScrollView, Pressable, FlatList } from 'react-native';
 import { useFocusEffect, router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { getAllVisits, Visit, ACTIVITY_TYPES, Price, PRICE_LABELS, ratingColor } from '@/lib/visits';
+import { getAllVisits, Visit, ACTIVITY_TYPES, Price, PRICE_LABELS, ratingColor, formatRating } from '@/lib/visits';
 
 export default function HomeScreen() {
   const [visits, setVisits] = useState<Visit[]>([]);
@@ -93,7 +93,7 @@ function SpotCard({ visit }: { visit: Visit }) {
   return (
     <View style={styles.card}>
       <View style={[styles.cardScore, { backgroundColor: ratingColor(visit.rating) }]}>
-        <Text style={styles.cardScoreText}>{visit.rating}</Text>
+        <Text style={styles.cardScoreText}>{formatRating(visit.rating)}</Text>
       </View>
       <Text style={styles.cardName} numberOfLines={2}>{visit.venue_name}</Text>
       <View style={styles.cardMeta}>
@@ -118,7 +118,7 @@ function RankedRow({ visit, rank }: { visit: Visit; rank: number }) {
       </View>
       <View style={[styles.rankBadge, { backgroundColor: ratingColor(visit.rating) + '22' }]}>
         <Text style={[styles.rankBadgeText, { color: ratingColor(visit.rating) }]}>
-          {visit.rating}
+          {formatRating(visit.rating)}
         </Text>
       </View>
     </View>
@@ -135,8 +135,8 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 18, fontWeight: '700', color: '#1c1c1e', marginBottom: 2 },
   sectionSub: { fontSize: 13, color: '#8e8e93', marginBottom: 14 },
   card: { width: 160, backgroundColor: '#f9f9f9', borderRadius: 16, padding: 14, borderWidth: 1, borderColor: '#f0f0f0' },
-  cardScore: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
-  cardScoreText: { fontSize: 14, fontWeight: '800', color: '#fff' },
+  cardScore: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, alignSelf: 'flex-start', marginBottom: 10 },
+  cardScoreText: { fontSize: 13, fontWeight: '800', color: '#fff' },
   cardName: { fontSize: 14, fontWeight: '700', color: '#1c1c1e', marginBottom: 8, lineHeight: 18 },
   cardMeta: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   cardMetaText: { fontSize: 12, color: '#8e8e93' },

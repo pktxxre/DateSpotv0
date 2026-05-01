@@ -8,7 +8,7 @@ export interface LogDraft {
   venue_name?: string;
   visited_at?: string;
   notes?: string;
-  step: 'location' | 'details' | 'compare' | 'done';
+  step: 'location' | 'details' | 'triage' | 'compare' | 'done';
   savedAt: string;
 }
 
