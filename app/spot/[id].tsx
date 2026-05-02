@@ -8,7 +8,6 @@ import { useLocalSearchParams, router, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system';
 import {
   getVisitById, deleteVisit, updateVisit, Visit,
   ACTIVITY_TYPES, PRICE_LABELS, Price, ActivityType,
@@ -63,20 +62,11 @@ export default function SpotDetailScreen() {
       mediaTypes: ['images'],
       allowsMultipleSelection: true,
       quality: 0.85,
+      copyToCacheDirectory: true,
     });
     if (result.canceled) return;
 
-    const dir = `${FileSystem.documentDirectory}datespot-photos/`;
-    await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
-
-    const newUris: string[] = [];
-    for (const asset of result.assets) {
-      const dest = `${dir}${id}_${Date.now()}_${newUris.length}.jpg`;
-      await FileSystem.copyAsync({ from: asset.uri, to: dest });
-      newUris.push(dest);
-    }
-
-    const updated = [...visit.photos, ...newUris];
+    const updated = [...visit.photos, ...result.assets.map((a) => a.uri)];
     updateVisit(id, { photos: updated });
     setVisit({ ...visit, photos: updated });
   }
