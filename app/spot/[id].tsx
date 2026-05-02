@@ -7,7 +7,6 @@ import MapView, { Marker } from 'react-native-maps';
 import { useLocalSearchParams, router, useFocusEffect, Stack } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
 import {
   getVisitById, deleteVisit, updateVisit, Visit,
   ACTIVITY_TYPES, PRICE_LABELS, Price, ActivityType,
@@ -50,25 +49,6 @@ export default function SpotDetailScreen() {
         }
       }
     );
-  }
-
-  async function handleAddPhotos() {
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) {
-      Alert.alert('Permission needed', 'Enable photo access in Settings to add photos.');
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsMultipleSelection: true,
-      quality: 0.85,
-      copyToCacheDirectory: true,
-    });
-    if (result.canceled) return;
-
-    const updated = [...visit.photos, ...result.assets.map((a) => a.uri)];
-    updateVisit(id, { photos: updated });
-    setVisit({ ...visit, photos: updated });
   }
 
   const info = ACTIVITY_TYPES.find((a) => a.value === visit.activity_type);
@@ -114,9 +94,6 @@ export default function SpotDetailScreen() {
           <View style={styles.photosSection}>
             <View style={styles.photosSectionHeader}>
               <Text style={styles.sectionLabel}>Photos</Text>
-              <Pressable onPress={handleAddPhotos} hitSlop={8}>
-                <Ionicons name="add-circle-outline" size={22} color="#ff3b5c" />
-              </Pressable>
             </View>
             <View style={styles.photosGrid}>
               {visit.photos.map((uri, idx) => (
@@ -175,13 +152,6 @@ export default function SpotDetailScreen() {
           </View>
         </View>
 
-        {/* Add photos CTA when no photos yet */}
-        {visit.photos.length === 0 && (
-          <Pressable style={styles.addPhotosRow} onPress={handleAddPhotos}>
-            <Ionicons name="camera-outline" size={18} color="#ff3b5c" />
-            <Text style={styles.addPhotosText}>Add photos</Text>
-          </Pressable>
-        )}
       </ScrollView>
 
       {/* Full-screen map modal */}
@@ -405,16 +375,6 @@ const styles = StyleSheet.create({
   notesWrap: { padding: 16 },
   notesText: { fontSize: 14, color: '#3a3a3c', lineHeight: 20 },
   notesEmpty: { fontSize: 14, color: '#c7c7cc', fontStyle: 'italic' },
-
-  addPhotosRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    marginHorizontal: H_PAD, marginTop: 16,
-    paddingVertical: 14, paddingHorizontal: 16,
-    backgroundColor: '#fff5f7', borderRadius: 14,
-    borderWidth: 1, borderColor: '#ffd6de',
-    justifyContent: 'center',
-  },
-  addPhotosText: { fontSize: 15, fontWeight: '600', color: '#ff3b5c' },
 
   fullMapRoot: { flex: 1, backgroundColor: '#fff' },
   modalSafe: { backgroundColor: '#fff', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#e5e5ea' },
