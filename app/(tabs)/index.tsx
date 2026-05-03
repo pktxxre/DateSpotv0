@@ -63,13 +63,7 @@ export default function HomeScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       {/* Header */}
       <View style={styles.header}>
-        <Pressable hitSlop={12}>
-          <Ionicons name="menu-outline" size={24} color={C.primary} />
-        </Pressable>
         <Text style={styles.headerTitle}>DateSpot</Text>
-        <Pressable hitSlop={12}>
-          <Ionicons name="person-circle-outline" size={27} color={C.primary} />
-        </Pressable>
       </View>
 
       {/* Search */}
@@ -242,7 +236,6 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
 
   header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 20, paddingTop: 6, paddingBottom: 10,
   },
   headerTitle: {
