@@ -13,22 +13,13 @@ import {
   ratingColor, formatRating,
 } from '@/lib/visits';
 import { uploadPhoto } from '@/lib/storage';
+import { T } from '@/lib/theme';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const H_PAD = 20;
 const PHOTO_COLS = 3;
 const PHOTO_GAP = 4;
 const PHOTO_SIZE = (SCREEN_W - H_PAD * 2 - PHOTO_GAP * (PHOTO_COLS - 1)) / PHOTO_COLS;
-
-const C = {
-  bg: '#fff8ee',
-  primary: '#431407',
-  accent: '#E76F51',
-  muted: '#92400e',
-  mutedLight: '#b45309',
-  border: '#fde8c8',
-  card: '#fff',
-};
 
 function friendlyDate(raw: string): string {
   if (!raw) return '';
@@ -84,17 +75,17 @@ export default function SpotDetailScreen() {
       <SafeAreaView style={styles.headerSafe} edges={['top']}>
         <View style={styles.header}>
           <Pressable onPress={() => router.back()} hitSlop={12} style={styles.headerBtn}>
-            <Ionicons name="chevron-back" size={26} color={C.primary} />
+            <Ionicons name="chevron-back" size={26} color={T.primary} />
           </Pressable>
           <View style={{ flex: 1 }} />
           <Pressable onPress={handleShare} hitSlop={12} style={styles.headerBtn}>
-            <Ionicons name="share-outline" size={22} color={C.primary} />
+            <Ionicons name="share-outline" size={22} color={T.primary} />
           </Pressable>
           <Pressable onPress={() => setEditing(true)} hitSlop={12} style={styles.headerBtn}>
-            <Ionicons name="pencil-outline" size={20} color={C.primary} />
+            <Ionicons name="pencil-outline" size={20} color={T.primary} />
           </Pressable>
           <Pressable onPress={handleDelete} hitSlop={12} style={styles.headerBtn}>
-            <Ionicons name="trash-outline" size={20} color="#C0392B" />
+            <Ionicons name="trash-outline" size={20} color={T.danger} />
           </Pressable>
         </View>
       </SafeAreaView>
@@ -332,8 +323,8 @@ function EditModal({ visit, onClose, onSave }: { visit: Visit; onClose: () => vo
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: C.bg },
-  headerSafe: { backgroundColor: C.bg },
+  root: { flex: 1, backgroundColor: T.bg },
+  headerSafe: { backgroundColor: T.bg },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4, paddingVertical: 2 },
   headerBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
 
@@ -342,20 +333,20 @@ const styles = StyleSheet.create({
 
   hero: {
     paddingHorizontal: H_PAD, paddingTop: 8, paddingBottom: 24,
-    borderBottomWidth: 1, borderBottomColor: C.border,
+    borderBottomWidth: 1, borderBottomColor: T.border,
   },
   venueName: {
-    fontSize: 26, fontWeight: '800', color: C.primary,
+    fontSize: 26, fontWeight: '800', color: T.primary,
     lineHeight: 32, letterSpacing: -0.5, marginBottom: 6,
   },
-  dateStr: { fontSize: 14, color: C.muted, fontWeight: '500', marginBottom: 14 },
+  dateStr: { fontSize: 14, color: T.muted, fontWeight: '500', marginBottom: 14 },
 
   tags: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
   tag: {
-    backgroundColor: C.card, borderWidth: 1, borderColor: C.border,
+    backgroundColor: T.card, borderWidth: 1, borderColor: T.border,
     borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5,
   },
-  tagText: { fontSize: 13, fontWeight: '500', color: C.muted },
+  tagText: { fontSize: 13, fontWeight: '500', color: T.muted },
 
   ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   ratingBadge: {
@@ -364,20 +355,20 @@ const styles = StyleSheet.create({
   },
   ratingScore: { fontSize: 18, fontWeight: '800' },
   ratingSlash: { fontSize: 11, fontWeight: '600' },
-  ratingCaption: { fontSize: 13, color: C.muted, fontWeight: '500' },
+  ratingCaption: { fontSize: 13, color: T.muted, fontWeight: '500' },
 
   section: { paddingHorizontal: H_PAD, marginTop: 22 },
   sectionLabel: {
-    fontSize: 11, fontWeight: '700', color: C.mutedLight,
+    fontSize: 11, fontWeight: '700', color: T.muted,
     textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10,
   },
 
   notesCard: {
-    backgroundColor: C.card, borderRadius: 14, padding: 16,
-    borderWidth: 1, borderColor: C.border,
-    shadowColor: '#d97706', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 6,
+    backgroundColor: T.card, borderRadius: 14, padding: 16,
+    borderWidth: 1, borderColor: T.border,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 6,
   },
-  notesText: { fontSize: 15, color: C.primary, lineHeight: 23 },
+  notesText: { fontSize: 15, color: T.primary, lineHeight: 23 },
 
   photosGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: PHOTO_GAP },
   photoThumb: { width: PHOTO_SIZE, height: PHOTO_SIZE, borderRadius: 10, backgroundColor: '#f2f2f7' },
@@ -416,42 +407,42 @@ const styles = StyleSheet.create({
 });
 
 const e = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#fff' },
+  root: { flex: 1, backgroundColor: T.bg },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 20, paddingVertical: 16,
-    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#e5e5ea',
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.border,
   },
-  cancel: { fontSize: 16, color: '#8e8e93' },
-  title: { fontSize: 17, fontWeight: '600', color: '#1c1c1e' },
-  save: { fontSize: 16, fontWeight: '600', color: '#E76F51' },
+  cancel: { fontSize: 16, color: T.muted },
+  title: { fontSize: 17, fontWeight: '600', color: T.primary },
+  save: { fontSize: 16, fontWeight: '600', color: T.accent },
   form: { paddingHorizontal: 20, paddingTop: 16 },
-  label: { fontSize: 13, fontWeight: '600', color: '#8e8e93', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 },
-  input: { backgroundColor: '#f2f2f7', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14, fontSize: 15, color: '#1c1c1e', marginBottom: 12 },
+  label: { fontSize: 13, fontWeight: '600', color: T.muted, marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 },
+  input: { backgroundColor: T.inputBg, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14, fontSize: 15, color: T.primary, marginBottom: 12 },
   inputMulti: { minHeight: 100, textAlignVertical: 'top' },
   chipScroll: { marginBottom: 16, marginHorizontal: -20 },
   chip: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: '#f2f2f7', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 9, marginRight: 8,
+    backgroundColor: T.inputBg, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 9, marginRight: 8,
     borderWidth: 1.5, borderColor: 'transparent',
   },
-  chipSel: { backgroundColor: '#fff4f0', borderColor: '#E76F51' },
+  chipSel: { backgroundColor: T.accentTint, borderColor: T.accent },
   chipEmoji: { fontSize: 15 },
-  chipLabel: { fontSize: 14, fontWeight: '500', color: '#3a3a3c' },
-  chipLabelSel: { color: '#E76F51', fontWeight: '700' },
+  chipLabel: { fontSize: 14, fontWeight: '500', color: T.primary },
+  chipLabelSel: { color: T.accent, fontWeight: '700' },
   priceRow: { flexDirection: 'row', gap: 10, marginBottom: 16 },
-  priceBtn: { flex: 1, backgroundColor: '#f2f2f7', borderRadius: 12, paddingVertical: 12, alignItems: 'center', borderWidth: 1.5, borderColor: 'transparent' },
-  priceBtnSel: { backgroundColor: '#fff4f0', borderColor: '#E76F51' },
-  priceBtnText: { fontSize: 16, fontWeight: '600', color: '#3a3a3c' },
-  priceBtnTextSel: { color: '#E76F51' },
+  priceBtn: { flex: 1, backgroundColor: T.inputBg, borderRadius: 12, paddingVertical: 12, alignItems: 'center', borderWidth: 1.5, borderColor: 'transparent' },
+  priceBtnSel: { backgroundColor: T.accentTint, borderColor: T.accent },
+  priceBtnText: { fontSize: 16, fontWeight: '600', color: T.primary },
+  priceBtnTextSel: { color: T.accent },
   photoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
   photoThumbWrap: { position: 'relative' },
   photoThumb: { width: 80, height: 80, borderRadius: 10 },
   photoRemove: { position: 'absolute', top: -6, right: -6 },
   photoAdd: {
     width: 80, height: 80, borderRadius: 10,
-    backgroundColor: '#f2f2f7', alignItems: 'center', justifyContent: 'center', gap: 4,
-    borderWidth: 1, borderColor: '#e5e5ea', borderStyle: 'dashed',
+    backgroundColor: T.inputBg, alignItems: 'center', justifyContent: 'center', gap: 4,
+    borderWidth: 1, borderColor: T.border, borderStyle: 'dashed',
   },
-  photoAddText: { fontSize: 11, color: '#8e8e93', fontWeight: '500' },
+  photoAddText: { fontSize: 11, color: T.muted, fontWeight: '500' },
 });

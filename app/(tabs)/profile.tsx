@@ -8,17 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { getAllVisits, Visit, ACTIVITY_TYPES } from '@/lib/visits';
 import { getProfile, UserProfile } from '@/lib/profile';
-
-const C = {
-  bg: '#FCF9F2',
-  primary: '#4B3621',
-  accent: '#E76F51',
-  green: '#2D6A4F',
-  muted: '#8B7762',
-  card: '#FFFFFF',
-  border: '#EDE8E0',
-  placeholder: '#E0D8CE',
-};
+import { T } from '@/lib/theme';
 
 type ActivityItem = {
   id: string;
@@ -76,7 +66,7 @@ export default function ProfileScreen() {
           onPress={() => router.push('/settings')}
           hitSlop={12}
         >
-          <Ionicons name="settings-outline" size={22} color={C.primary} />
+          <Ionicons name="settings-outline" size={22} color={T.primary} />
         </Pressable>
       </View>
 
@@ -118,7 +108,7 @@ export default function ProfileScreen() {
             style={({ pressed }) => [styles.actionBtn, styles.actionBtnSecondary, pressed && { opacity: 0.8 }]}
             onPress={handleShare}
           >
-            <Ionicons name="share-outline" size={15} color={C.primary} style={{ marginRight: 6 }} />
+            <Ionicons name="share-outline" size={15} color={T.primary} style={{ marginRight: 6 }} />
             <Text style={styles.actionBtnSecondaryText}>Share Profile</Text>
           </Pressable>
         </View>
@@ -164,14 +154,14 @@ function ActivityRow({ item }: { item: ActivityItem }) {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: C.bg },
+  safe: { flex: 1, backgroundColor: T.bg },
 
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     paddingHorizontal: 20, paddingTop: 6, paddingBottom: 10,
   },
   headerTitle: {
-    fontSize: 20, fontWeight: '700', color: C.primary,
+    fontSize: 20, fontWeight: '700', color: T.primary,
     fontFamily: 'Georgia', letterSpacing: -0.2,
   },
   gearBtn: {
@@ -186,29 +176,29 @@ const styles = StyleSheet.create({
   },
   avatar: { width: 96, height: 96, borderRadius: 48 },
   avatarPlaceholder: {
-    backgroundColor: C.placeholder,
+    backgroundColor: T.placeholder,
     alignItems: 'center', justifyContent: 'center',
   },
   username: {
-    fontSize: 22, fontWeight: '700', color: C.primary,
+    fontSize: 22, fontWeight: '700', color: T.primary,
     fontFamily: 'Georgia', letterSpacing: -0.3, marginBottom: 6,
   },
   bio: {
-    fontSize: 14, color: C.muted, textAlign: 'center',
+    fontSize: 14, color: T.muted, textAlign: 'center',
     paddingHorizontal: 32, lineHeight: 20,
   },
 
   statsRow: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: C.card, marginHorizontal: 20, borderRadius: 16,
+    backgroundColor: T.card, marginHorizontal: 20, borderRadius: 16,
     paddingVertical: 16, marginBottom: 16,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06, shadowRadius: 8, elevation: 2,
   },
   statBox: { flex: 1, alignItems: 'center' },
-  statValue: { fontSize: 22, fontWeight: '700', color: C.primary, marginBottom: 2 },
-  statLabel: { fontSize: 12, fontWeight: '600', color: C.muted, letterSpacing: 0.4 },
-  statDivider: { width: 1, height: 32, backgroundColor: C.border },
+  statValue: { fontSize: 22, fontWeight: '700', color: T.primary, marginBottom: 2 },
+  statLabel: { fontSize: 12, fontWeight: '600', color: T.muted, letterSpacing: 0.4 },
+  statDivider: { width: 1, height: 32, backgroundColor: T.border },
 
   actionRow: {
     flexDirection: 'row', gap: 10, paddingHorizontal: 20, marginBottom: 28,
@@ -217,27 +207,27 @@ const styles = StyleSheet.create({
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     paddingVertical: 13, borderRadius: 14,
   },
-  actionBtnPrimary: { backgroundColor: C.accent },
-  actionBtnSecondary: { backgroundColor: C.card, borderWidth: 1, borderColor: C.border },
+  actionBtnPrimary: { backgroundColor: T.accent },
+  actionBtnSecondary: { backgroundColor: T.card, borderWidth: 1, borderColor: T.border },
   actionBtnPrimaryText: { color: '#fff', fontSize: 15, fontWeight: '600' },
-  actionBtnSecondaryText: { color: C.primary, fontSize: 15, fontWeight: '600' },
+  actionBtnSecondaryText: { color: T.primary, fontSize: 15, fontWeight: '600' },
 
   activitySection: { paddingHorizontal: 20 },
   sectionTitle: {
-    fontSize: 18, fontWeight: '700', color: C.primary,
+    fontSize: 18, fontWeight: '700', color: T.primary,
     fontFamily: 'Georgia', marginBottom: 14,
   },
 
   activityRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.border,
+    paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: T.border,
   },
   activityEmoji: { fontSize: 22, width: 28, textAlign: 'center' },
   activityInfo: { flex: 1 },
-  activityLabel: { fontSize: 14, fontWeight: '600', color: C.primary, marginBottom: 2 },
-  activitySub: { fontSize: 12, color: C.muted },
+  activityLabel: { fontSize: 14, fontWeight: '600', color: T.primary, marginBottom: 2 },
+  activitySub: { fontSize: 12, color: T.muted },
 
   emptyActivity: { alignItems: 'center', paddingVertical: 40 },
   emptyEmoji: { fontSize: 36, marginBottom: 10 },
-  emptyText: { fontSize: 14, color: C.muted, textAlign: 'center' },
+  emptyText: { fontSize: 14, color: T.muted, textAlign: 'center' },
 });

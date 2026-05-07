@@ -2,16 +2,7 @@ import { StyleSheet, View, Text, ScrollView, Pressable, Alert } from 'react-nati
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-
-const C = {
-  bg: '#FCF9F2',
-  primary: '#4B3621',
-  accent: '#E76F51',
-  muted: '#8B7762',
-  card: '#FFFFFF',
-  border: '#EDE8E0',
-  danger: '#C0392B',
-};
+import { T } from '@/lib/theme';
 
 type SettingRowProps = {
   icon: keyof typeof Ionicons.glyphMap;
@@ -27,10 +18,10 @@ function SettingRow({ icon, label, onPress, danger }: SettingRowProps) {
       onPress={onPress}
     >
       <View style={[styles.rowIconWrap, danger && styles.rowIconDanger]}>
-        <Ionicons name={icon} size={18} color={danger ? C.danger : C.primary} />
+        <Ionicons name={icon} size={18} color={danger ? C.danger : T.primary} />
       </View>
       <Text style={[styles.rowLabel, danger && styles.rowLabelDanger]}>{label}</Text>
-      {!danger && <Ionicons name="chevron-forward" size={16} color={C.muted} />}
+      {!danger && <Ionicons name="chevron-forward" size={16} color={T.muted} />}
     </Pressable>
   );
 }
@@ -67,7 +58,7 @@ export default function SettingsScreen() {
       {/* Header */}
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} hitSlop={12} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={24} color={C.primary} />
+          <Ionicons name="chevron-back" size={24} color={T.primary} />
         </Pressable>
         <Text style={styles.headerTitle}>Settings</Text>
       </View>
@@ -129,7 +120,7 @@ export default function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: C.bg },
+  safe: { flex: 1, backgroundColor: T.bg },
 
   header: {
     flexDirection: 'row', alignItems: 'center',
@@ -137,18 +128,18 @@ const styles = StyleSheet.create({
   },
   backBtn: { marginRight: 12 },
   headerTitle: {
-    fontSize: 20, fontWeight: '700', color: C.primary,
+    fontSize: 20, fontWeight: '700', color: T.primary,
     fontFamily: 'Georgia', letterSpacing: -0.2,
   },
 
   sectionHeader: {
-    fontSize: 12, fontWeight: '600', color: C.muted,
+    fontSize: 12, fontWeight: '600', color: T.muted,
     letterSpacing: 0.6, textTransform: 'uppercase',
     paddingHorizontal: 20, marginTop: 24, marginBottom: 8,
   },
 
   card: {
-    backgroundColor: C.card, marginHorizontal: 16, borderRadius: 16,
+    backgroundColor: T.card, marginHorizontal: 16, borderRadius: 16,
     overflow: 'hidden',
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06, shadowRadius: 8, elevation: 2,
@@ -160,12 +151,12 @@ const styles = StyleSheet.create({
   },
   rowIconWrap: {
     width: 32, height: 32, borderRadius: 8,
-    backgroundColor: '#F2EDE6',
+    backgroundColor: T.inputBg,
     alignItems: 'center', justifyContent: 'center',
   },
-  rowIconDanger: { backgroundColor: '#FDE8E8' },
-  rowLabel: { flex: 1, fontSize: 15, fontWeight: '500', color: C.primary },
+  rowIconDanger: { backgroundColor: T.dangerBg },
+  rowLabel: { flex: 1, fontSize: 15, fontWeight: '500', color: T.primary },
   rowLabelDanger: { color: C.danger },
 
-  divider: { height: 1, backgroundColor: C.border, marginLeft: 60 },
+  divider: { height: 1, backgroundColor: T.border, marginLeft: 60 },
 });

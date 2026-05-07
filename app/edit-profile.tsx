@@ -8,16 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { getProfile, saveProfile } from '@/lib/profile';
 import { uploadPhoto } from '@/lib/storage';
-
-const C = {
-  bg: '#FCF9F2',
-  primary: '#4B3621',
-  accent: '#E76F51',
-  muted: '#8B7762',
-  card: '#FFFFFF',
-  border: '#EDE8E0',
-  placeholder: '#E0D8CE',
-};
+import { T } from '@/lib/theme';
 
 export default function EditProfileScreen() {
   const [username, setUsername] = useState('');
@@ -81,7 +72,7 @@ export default function EditProfileScreen() {
       {/* Header */}
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} hitSlop={12} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={24} color={C.primary} />
+          <Ionicons name="chevron-back" size={24} color={T.primary} />
         </Pressable>
         <Text style={styles.headerTitle}>Edit Profile</Text>
         <Pressable
@@ -126,7 +117,7 @@ export default function EditProfileScreen() {
               value={username}
               onChangeText={setUsername}
               placeholder="Your username"
-              placeholderTextColor={C.muted}
+              placeholderTextColor={T.muted}
               autoCorrect={false}
               autoCapitalize="none"
               maxLength={30}
@@ -140,7 +131,7 @@ export default function EditProfileScreen() {
               value={bio}
               onChangeText={setBio}
               placeholder="Tell people a bit about yourself…"
-              placeholderTextColor={C.muted}
+              placeholderTextColor={T.muted}
               multiline
               maxLength={150}
               textAlignVertical="top"
@@ -156,7 +147,7 @@ export default function EditProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: C.bg },
+  safe: { flex: 1, backgroundColor: T.bg },
 
   header: {
     flexDirection: 'row', alignItems: 'center',
@@ -165,38 +156,38 @@ const styles = StyleSheet.create({
   backBtn: { marginRight: 'auto' },
   headerTitle: {
     position: 'absolute', left: 0, right: 0, textAlign: 'center',
-    fontSize: 20, fontWeight: '700', color: C.primary,
+    fontSize: 20, fontWeight: '700', color: T.primary,
     fontFamily: 'Georgia', letterSpacing: -0.2,
   },
   saveBtn: { marginLeft: 'auto' },
-  saveBtnText: { fontSize: 16, fontWeight: '600', color: C.accent },
+  saveBtnText: { fontSize: 16, fontWeight: '600', color: T.accent },
 
   photoSection: { alignItems: 'center', paddingVertical: 24 },
   avatarWrap: { position: 'relative' },
   avatar: { width: 96, height: 96, borderRadius: 48 },
   avatarPlaceholder: {
-    backgroundColor: C.placeholder,
+    backgroundColor: T.placeholder,
     alignItems: 'center', justifyContent: 'center',
   },
   cameraOverlay: {
     position: 'absolute', bottom: 2, right: 2,
     width: 28, height: 28, borderRadius: 14,
-    backgroundColor: C.accent,
+    backgroundColor: T.accent,
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 2, borderColor: C.bg,
+    borderWidth: 2, borderColor: T.bg,
   },
-  photoHint: { fontSize: 13, color: C.muted, marginTop: 8 },
+  photoHint: { fontSize: 13, color: T.muted, marginTop: 8 },
 
   form: { paddingHorizontal: 20 },
   fieldLabel: {
-    fontSize: 12, fontWeight: '600', color: C.muted,
+    fontSize: 12, fontWeight: '600', color: T.muted,
     letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: 8,
   },
   input: {
-    backgroundColor: C.card, borderRadius: 14, borderWidth: 1,
-    borderColor: C.border, paddingHorizontal: 16, paddingVertical: 14,
-    fontSize: 16, color: C.primary,
+    backgroundColor: T.card, borderRadius: 14, borderWidth: 1,
+    borderColor: T.border, paddingHorizontal: 16, paddingVertical: 14,
+    fontSize: 16, color: T.primary,
   },
   bioInput: { height: 110, paddingTop: 14 },
-  charCount: { fontSize: 12, color: C.muted, textAlign: 'right', marginTop: 4 },
+  charCount: { fontSize: 12, color: T.muted, textAlign: 'right', marginTop: 4 },
 });

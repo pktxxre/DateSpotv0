@@ -3,15 +3,7 @@ import { StyleSheet, View, Text, ScrollView, Pressable } from 'react-native';
 import { useFocusEffect, router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { getAllVisits, Visit, ACTIVITY_TYPES, Price, PRICE_LABELS, formatRating, ratingColor } from '@/lib/visits';
-
-const C = {
-  bg: '#FCF9F2',
-  primary: '#4B3621',
-  muted: '#8B7762',
-  card: '#FFFFFF',
-  border: '#EDE8E0',
-  segBg: '#E8E0D6',
-};
+import { T } from '@/lib/theme';
 
 type Tab = 'picks' | 'all';
 type SortOption = 'date' | 'best' | 'worst';
@@ -190,7 +182,7 @@ function SpotRow({ visit }: { visit: Visit }) {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: C.bg },
+  safe: { flex: 1, backgroundColor: T.bg },
   scroll: { flex: 1 },
   listContent: { paddingHorizontal: 16, paddingBottom: 40 },
 
@@ -199,50 +191,50 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 20, fontWeight: '700', color: C.primary,
+    fontSize: 20, fontWeight: '700', color: T.primary,
     fontFamily: 'Georgia', letterSpacing: -0.2,
   },
 
   segControl: {
     flexDirection: 'row', marginHorizontal: 16, marginBottom: 14,
-    backgroundColor: C.segBg, borderRadius: 10, padding: 3,
+    backgroundColor: T.segBg, borderRadius: 10, padding: 3,
   },
   segBtn: {
     flex: 1, paddingVertical: 7, borderRadius: 8, alignItems: 'center',
   },
   segBtnActive: {
-    backgroundColor: C.card,
+    backgroundColor: T.card,
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1, shadowRadius: 3, elevation: 2,
   },
-  segBtnText: { fontSize: 13, fontWeight: '500', color: C.muted },
-  segBtnTextActive: { color: C.primary, fontWeight: '600' },
+  segBtnText: { fontSize: 13, fontWeight: '500', color: T.muted },
+  segBtnTextActive: { color: T.primary, fontWeight: '600' },
 
   sortRow: {
     flexDirection: 'row', gap: 8, paddingHorizontal: 16, marginBottom: 12, flexWrap: 'wrap',
   },
   sortChip: {
     paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20,
-    backgroundColor: C.bg, borderWidth: 1, borderColor: C.border,
+    backgroundColor: T.bg, borderWidth: 1, borderColor: T.border,
   },
-  sortChipActive: { backgroundColor: C.primary, borderColor: C.primary },
-  sortChipText: { fontSize: 12, fontWeight: '600', color: C.muted },
+  sortChipActive: { backgroundColor: T.primary, borderColor: T.primary },
+  sortChipText: { fontSize: 12, fontWeight: '600', color: T.muted },
   sortChipTextActive: { color: '#fff' },
 
   row: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 12,
-    paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.border,
+    paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.border,
   },
   rowEmoji: {
     width: 40, height: 40, borderRadius: 12,
-    backgroundColor: C.card, alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: C.border, marginTop: 1,
+    backgroundColor: T.card, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: T.border, marginTop: 1,
   },
   rowEmojiText: { fontSize: 19 },
   rowBody: { flex: 1 },
   rowTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 },
-  rowName: { fontSize: 15, fontWeight: '600', color: C.primary, flex: 1, marginRight: 8 },
-  rowMeta: { fontSize: 12, color: C.muted, marginBottom: 4 },
+  rowName: { fontSize: 15, fontWeight: '600', color: T.primary, flex: 1, marginRight: 8 },
+  rowMeta: { fontSize: 12, color: T.muted, marginBottom: 4 },
   rowPreview: { fontSize: 12, color: '#A0927E', fontStyle: 'italic', lineHeight: 16 },
 
   ratingPill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
@@ -254,10 +246,10 @@ const styles = StyleSheet.create({
   },
   emptyEmoji: { fontSize: 44, marginBottom: 14 },
   emptyTitle: {
-    fontSize: 20, fontWeight: '700', color: C.primary,
+    fontSize: 20, fontWeight: '700', color: T.primary,
     fontFamily: 'Georgia', marginBottom: 8,
   },
-  emptyBody: { fontSize: 15, color: C.muted, textAlign: 'center', lineHeight: 22, marginBottom: 24 },
-  logCta: { backgroundColor: '#E76F51', borderRadius: 14, paddingVertical: 13, paddingHorizontal: 28 },
+  emptyBody: { fontSize: 15, color: T.muted, textAlign: 'center', lineHeight: 22, marginBottom: 24 },
+  logCta: { backgroundColor: T.accent, borderRadius: 14, paddingVertical: 13, paddingHorizontal: 28 },
   logCtaText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 });
