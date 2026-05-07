@@ -165,3 +165,16 @@ export function ratingColor(rating: number): string {
 export function formatRating(rating: number): string {
   return rating.toFixed(1);
 }
+
+export function friendlyDate(raw: string): string {
+  if (!raw) return '';
+  if (!/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw;
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) return raw;
+  const now = new Date();
+  const diffDays = Math.floor((now.getTime() - d.getTime()) / 86400000);
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays < 7) return d.toLocaleDateString('en-US', { weekday: 'long' });
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}

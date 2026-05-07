@@ -6,7 +6,7 @@ import {
 import { useFocusEffect, router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { getAllVisits, Visit, ACTIVITY_TYPES } from '@/lib/visits';
+import { getAllVisits, Visit, ACTIVITY_TYPES, friendlyDate } from '@/lib/visits';
 import { getProfile, UserProfile } from '@/lib/profile';
 import { T } from '@/lib/theme';
 
@@ -147,7 +147,7 @@ function ActivityRow({ item }: { item: ActivityItem }) {
       <Text style={styles.activityEmoji}>{item.emoji}</Text>
       <View style={styles.activityInfo}>
         <Text style={styles.activityLabel}>{item.label}</Text>
-        <Text style={styles.activitySub}>{item.sublabel} · {item.date}</Text>
+        <Text style={styles.activitySub}>{item.sublabel} · {friendlyDate(item.date)}</Text>
       </View>
     </View>
   );

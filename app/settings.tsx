@@ -126,8 +126,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 20, paddingTop: 6, paddingBottom: 14,
   },
-  backBtn: { marginRight: 12 },
+  backBtn: { marginRight: 'auto' },
   headerTitle: {
+    position: 'absolute', left: 0, right: 0, textAlign: 'center',
     fontSize: 20, fontWeight: '700', color: T.primary,
     fontFamily: 'Georgia', letterSpacing: -0.2,
   },

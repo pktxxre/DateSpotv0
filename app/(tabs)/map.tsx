@@ -86,6 +86,22 @@ export default function MapScreen() {
     saveDraft({ ...draft, step, savedAt: new Date().toISOString() });
   }, [step, draft]);
 
+  useEffect(() => {
+    Location.getForegroundPermissionsAsync().then(({ status }) => {
+      if (status !== 'granted') return;
+      Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced })
+        .then(loc => {
+          mapRef.current?.animateToRegion({
+            latitude: loc.coords.latitude,
+            longitude: loc.coords.longitude,
+            latitudeDelta: 0.08,
+            longitudeDelta: 0.08,
+          }, 800);
+        })
+        .catch(() => {});
+    });
+  }, []);
+
   function openLog() {
     setSelectedVisit(null);
     setStep('location');

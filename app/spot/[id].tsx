@@ -10,7 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import {
   getVisitById, deleteVisit, updateVisit, Visit,
   ACTIVITY_TYPES, PRICE_LABELS, Price, ActivityType,
-  ratingColor, formatRating,
+  ratingColor, formatRating, friendlyDate,
 } from '@/lib/visits';
 import { uploadPhoto } from '@/lib/storage';
 import { T } from '@/lib/theme';
@@ -21,18 +21,6 @@ const PHOTO_COLS = 3;
 const PHOTO_GAP = 4;
 const PHOTO_SIZE = (SCREEN_W - H_PAD * 2 - PHOTO_GAP * (PHOTO_COLS - 1)) / PHOTO_COLS;
 
-function friendlyDate(raw: string): string {
-  if (!raw) return '';
-  if (!/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw;
-  const d = new Date(raw);
-  if (isNaN(d.getTime())) return raw;
-  const now = new Date();
-  const diffDays = Math.floor((now.getTime() - d.getTime()) / 86400000);
-  if (diffDays === 0) return 'Today';
-  if (diffDays === 1) return 'Yesterday';
-  if (diffDays < 7) return d.toLocaleDateString('en-US', { weekday: 'long' });
-  return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-}
 
 export default function SpotDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();

@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react';
 import { StyleSheet, View, Text, ScrollView, Pressable } from 'react-native';
 import { useFocusEffect, router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { getAllVisits, Visit, ACTIVITY_TYPES, Price, PRICE_LABELS, formatRating, ratingColor } from '@/lib/visits';
+import { getAllVisits, Visit, ACTIVITY_TYPES, Price, PRICE_LABELS, formatRating, ratingColor, friendlyDate } from '@/lib/visits';
 import { T } from '@/lib/theme';
 
 type Tab = 'picks' | 'all';
@@ -15,19 +15,6 @@ const SORT_OPTIONS: { value: SortOption; label: string }[] = [
 ];
 
 
-function friendlyDate(raw: string): string {
-  if (!raw) return '';
-  // Already a human string like "Apr 28" — return as-is
-  if (!/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw;
-  const d = new Date(raw);
-  if (isNaN(d.getTime())) return raw;
-  const now = new Date();
-  const diffDays = Math.floor((now.getTime() - d.getTime()) / 86400000);
-  if (diffDays === 0) return 'Today';
-  if (diffDays === 1) return 'Yesterday';
-  if (diffDays < 7) return d.toLocaleDateString('en-US', { weekday: 'long' });
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
 
 function sortVisits(visits: Visit[], sort: SortOption): Visit[] {
   const copy = [...visits];
