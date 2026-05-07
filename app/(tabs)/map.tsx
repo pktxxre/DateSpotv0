@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   StyleSheet, View, Text, Pressable, TextInput, Alert, ScrollView,
+  Image, NativeModules,
 } from 'react-native';
 import MapView, { Marker, Region, MapPressEvent } from 'react-native-maps';
 import BottomSheet, { BottomSheetView } from '@gorhom/bottom-sheet';
@@ -17,6 +18,7 @@ import {
   currentComparison, ComparisonState, Triage,
 } from '@/lib/ranking';
 import { saveDraft, loadDraft, clearDraft } from '@/lib/draft';
+import { uploadPhoto } from '@/lib/storage';
 import { T } from '@/lib/theme';
 
 const SF_REGION: Region = {
@@ -36,6 +38,7 @@ interface DraftVisit {
   notes: string;
   activity_type: ActivityType;
   price: Price;
+  photos: string[];
 }
 
 export default function MapScreen() {
@@ -209,6 +212,7 @@ export default function MapScreen() {
       notes: draft.notes || undefined,
       activity_type: draft.activity_type || 'other',
       price: draft.price || 2,
+      photos: draft.photos || [],
     });
     setVisits(getAllVisits());
     setStep('done');
@@ -385,6 +389,39 @@ function DetailsStep({ draft, onChange, onNext, onBack }: {
   onNext: () => void;
   onBack: () => void;
 }) {
+  const [uploading, setUploading] = useState(false);
+
+  const photos: string[] = draft.photos || [];
+
+  async function pickPhoto() {
+    if (!NativeModules.ExponentImagePicker) {
+      Alert.alert('Not available', 'Run `npx expo run:ios` to enable photo picking.');
+      return;
+    }
+    const ImagePicker = await import('expo-image-picker');
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Allow photo access in Settings.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.8,
+    });
+    if (result.canceled || !result.assets[0]) return;
+    setUploading(true);
+    const path = `visits/${Date.now()}.jpg`;
+    const url = await uploadPhoto(result.assets[0].uri, path);
+    setUploading(false);
+    if (url) onChange('photos', [...photos, url]);
+  }
+
+  function removePhoto(index: number) {
+    onChange('photos', photos.filter((_, i) => i !== index));
+  }
+
   return (
     <ScrollView style={styles.stepContainer} keyboardShouldPersistTaps="handled">
       <Text style={styles.stepTitle}>Tell me about it</Text>
@@ -408,6 +445,19 @@ function DetailsStep({ draft, onChange, onNext, onBack }: {
         onChangeText={(v) => onChange('visited_at', v)}
         returnKeyType="next"
       />
+
+      <Text style={styles.sectionLabel}>Photos</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photoScroll}>
+        {photos.map((uri, i) => (
+          <Pressable key={i} style={styles.photoThumb} onLongPress={() => removePhoto(i)}>
+            <Image source={{ uri }} style={styles.photoThumbImg} />
+          </Pressable>
+        ))}
+        <Pressable style={styles.photoAdd} onPress={pickPhoto} disabled={uploading}>
+          <Ionicons name={uploading ? 'hourglass-outline' : 'camera-outline'} size={22} color={T.muted} />
+          <Text style={styles.photoAddLabel}>{uploading ? 'Uploading…' : 'Add photo'}</Text>
+        </Pressable>
+      </ScrollView>
 
       <Text style={styles.sectionLabel}>What kind of spot?</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
@@ -613,12 +663,27 @@ const styles = StyleSheet.create({
   circleBtnSub: { fontSize: 11, color: T.muted, textAlign: 'center', marginTop: 2 },
 
   sectionLabel: { fontSize: 13, fontWeight: '600', color: T.muted, marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 },
+  photoScroll: { marginBottom: 16, marginHorizontal: -24 },
+  photoThumb: {
+    width: 80, height: 80, borderRadius: 10, overflow: 'hidden',
+    marginRight: 8, marginLeft: 8,
+  },
+  photoThumbImg: { width: '100%', height: '100%' },
+  photoAdd: {
+    width: 80, height: 80, borderRadius: 10,
+    borderWidth: 1.5, borderColor: T.border, borderStyle: 'dashed',
+    backgroundColor: T.card,
+    alignItems: 'center', justifyContent: 'center', gap: 4,
+    marginRight: 8, marginLeft: 8,
+  },
+  photoAddLabel: { fontSize: 11, color: T.muted, fontWeight: '500' },
+
   chipScroll: { marginBottom: 16, marginHorizontal: -24 },
   chip: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: T.inputBg, borderRadius: 20,
+    backgroundColor: T.card, borderRadius: 20,
     paddingHorizontal: 14, paddingVertical: 9, marginRight: 8,
-    borderWidth: 1.5, borderColor: 'transparent',
+    borderWidth: 1.5, borderColor: T.border,
   },
   chipSelected: { backgroundColor: T.accentTint, borderColor: T.accent },
   chipEmoji: { fontSize: 15 },
