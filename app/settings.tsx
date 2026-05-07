@@ -57,8 +57,11 @@ export default function SettingsScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       {/* Header */}
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} hitSlop={12} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={24} color={T.primary} />
+        <Pressable
+          onPress={() => router.back()}
+          style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.6 }]}
+        >
+          <Ionicons name="chevron-back" size={20} color={T.primary} />
         </Pressable>
         <Text style={styles.headerTitle}>Settings</Text>
       </View>
@@ -126,7 +129,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 20, paddingTop: 6, paddingBottom: 14,
   },
-  backBtn: { marginRight: 'auto' },
+  backBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: T.inputBg,
+    alignItems: 'center', justifyContent: 'center',
+  },
   headerTitle: {
     position: 'absolute', left: 0, right: 0, textAlign: 'center',
     fontSize: 20, fontWeight: '700', color: T.primary,
