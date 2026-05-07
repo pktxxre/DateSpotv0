@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  StyleSheet, View, Text, Pressable, TextInput, Alert, ScrollView,
-  Image, NativeModules,
+  StyleSheet, View, Text, Pressable, TextInput, Alert, ScrollView, Image,
 } from 'react-native';
 import MapView, { Marker, Region, MapPressEvent } from 'react-native-maps';
 import BottomSheet, { BottomSheetView } from '@gorhom/bottom-sheet';
@@ -394,10 +393,6 @@ function DetailsStep({ draft, onChange, onNext, onBack }: {
   const photos: string[] = draft.photos || [];
 
   async function pickPhoto() {
-    if (!NativeModules.ExponentImagePicker) {
-      Alert.alert('Not available', 'Run `npx expo run:ios` to enable photo picking.');
-      return;
-    }
     const ImagePicker = await import('expo-image-picker');
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {

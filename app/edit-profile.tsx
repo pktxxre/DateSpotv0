@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   StyleSheet, View, Text, TextInput, Pressable,
-  Image, Alert, KeyboardAvoidingView, Platform, ScrollView, NativeModules,
+  Image, Alert, KeyboardAvoidingView, Platform, ScrollView,
 } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -26,11 +26,6 @@ export default function EditProfileScreen() {
   }, []);
 
   const pickPhoto = async () => {
-    // Guard: native module not linked in this build
-    if (!NativeModules.ExponentImagePicker) {
-      Alert.alert('Not available', 'Close the app, run `npx expo run:ios`, then reopen.');
-      return;
-    }
     const ImagePicker = await import('expo-image-picker');
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
