@@ -222,8 +222,8 @@ export default function MapScreen() {
             coordinate={{ latitude: v.lat, longitude: v.lng }}
             onPress={() => handlePinPress(v)}
           >
-            <View style={[styles.pinBadge, { backgroundColor: ratingColor(v.rating) }]}>
-              <Text style={styles.pinScore}>{formatRating(v.rating)}</Text>
+            <View style={[styles.pinBadge, { borderColor: ratingColor(v.rating) }]}>
+              <Text style={[styles.pinScore, { color: ratingColor(v.rating) }]}>{formatRating(v.rating)}</Text>
             </View>
           </Marker>
         ))}
@@ -317,8 +317,8 @@ function VisitDetail({ visit, onClose }: { visit: Visit; onClose: () => void }) 
         </Pressable>
       </View>
       <View style={styles.detailMeta}>
-        <View style={[styles.detailScorePill, { backgroundColor: ratingColor(visit.rating) }]}>
-          <Text style={styles.detailScoreText}>{formatRating(visit.rating)}</Text>
+        <View style={[styles.detailScorePill, { backgroundColor: ratingColor(visit.rating) + '2E' }]}>
+          <Text style={[styles.detailScoreText, { color: ratingColor(visit.rating) }]}>{formatRating(visit.rating)}</Text>
         </View>
         <Text style={styles.detailMetaText}>{info?.emoji} {info?.label}</Text>
         <Text style={styles.detailMetaDot}>·</Text>
@@ -489,8 +489,8 @@ function CompareStep({ newVenueName, opponent, comparisonNumber, onBetter, onWor
         </Pressable>
         <View style={styles.compareVs}><Text style={styles.compareVsText}>vs</Text></View>
         <Pressable style={[styles.compareCard, styles.compareCardOld]} onPress={onWorse}>
-          <View style={[styles.compareCardScorePill, { backgroundColor: ratingColor(opponent.rating) }]}>
-            <Text style={styles.compareCardScoreText}>{formatRating(opponent.rating)}</Text>
+          <View style={[styles.compareCardScorePill, { backgroundColor: ratingColor(opponent.rating) + '2E' }]}>
+            <Text style={[styles.compareCardScoreText, { color: ratingColor(opponent.rating) }]}>{formatRating(opponent.rating)}</Text>
           </View>
           <Text style={styles.compareCardName} numberOfLines={2}>{opponent.venue_name}</Text>
           <Text style={styles.compareCardLabel}>That one</Text>
@@ -534,11 +534,11 @@ const styles = StyleSheet.create({
     minWidth: 40, height: 26, borderRadius: 13,
     paddingHorizontal: 7,
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 2, borderColor: '#fff',
+    backgroundColor: '#fff', borderWidth: 2,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25, shadowRadius: 4,
   },
-  pinScore: { fontSize: 12, fontWeight: '800', color: '#fff' },
+  pinScore: { fontSize: 12, fontWeight: '800' },
 
   pinHint: {
     position: 'absolute', top: 60, alignSelf: 'center',
@@ -560,7 +560,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12,
     alignItems: 'center', justifyContent: 'center',
   },
-  detailScoreText: { fontSize: 13, fontWeight: '800', color: '#fff' },
+  detailScoreText: { fontSize: 13, fontWeight: '800' },
   detailMetaText: { fontSize: 14, color: '#3a3a3c' },
   detailMetaDot: { fontSize: 14, color: '#c7c7cc' },
   detailNotes: { fontSize: 13, color: '#8e8e93', marginTop: 10, lineHeight: 18 },
@@ -642,7 +642,7 @@ const styles = StyleSheet.create({
   compareCardScorePill: {
     paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12,
   },
-  compareCardScoreText: { fontSize: 13, fontWeight: '800', color: '#fff' },
+  compareCardScoreText: { fontSize: 13, fontWeight: '800' },
   compareCardName: { fontSize: 14, fontWeight: '700', color: '#1c1c1e', textAlign: 'center', lineHeight: 18 },
   compareCardLabel: { fontSize: 11, color: '#8e8e93', fontWeight: '500' },
   compareVs: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#f2f2f7', alignItems: 'center', justifyContent: 'center' },

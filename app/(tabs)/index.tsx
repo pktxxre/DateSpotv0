@@ -1,232 +1,190 @@
 import { useCallback, useState } from 'react';
-import {
-  StyleSheet, View, Text, ScrollView, Pressable,
-  TextInput, Image,
-} from 'react-native';
+import { StyleSheet, View, Text, ScrollView, Pressable } from 'react-native';
 import { useFocusEffect, router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import {
-  getVisitsFiltered, Visit, ACTIVITY_TYPES, ActivityType,
-  Price, PRICE_LABELS, formatRating,
-} from '@/lib/visits';
+import { getAllVisits, Visit, ACTIVITY_TYPES, Price, PRICE_LABELS, formatRating, ratingColor } from '@/lib/visits';
 
 const C = {
   bg: '#FCF9F2',
   primary: '#4B3621',
-  accent: '#E76F51',
-  green: '#2D6A4F',
   muted: '#8B7762',
   card: '#FFFFFF',
   border: '#EDE8E0',
-  placeholder: '#E0D8CE',
+  segBg: '#E8E0D6',
 };
 
-function ratingColor(r: number): string {
-  if (r >= 7) return C.green;
-  if (r >= 4) return C.accent;
-  return '#C0392B';
+type Tab = 'picks' | 'all';
+type SortOption = 'date' | 'best' | 'worst';
+
+const SORT_OPTIONS: { value: SortOption; label: string }[] = [
+  { value: 'date', label: 'Date Logged' },
+  { value: 'best', label: 'Best to Worst' },
+  { value: 'worst', label: 'Worst to Best' },
+];
+
+
+function friendlyDate(raw: string): string {
+  if (!raw) return '';
+  // Already a human string like "Apr 28" — return as-is
+  if (!/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw;
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) return raw;
+  const now = new Date();
+  const diffDays = Math.floor((now.getTime() - d.getTime()) / 86400000);
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays < 7) return d.toLocaleDateString('en-US', { weekday: 'long' });
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-const CATEGORY_FILTERS: { value: ActivityType | null; label: string }[] = [
-  { value: null, label: 'All' },
-  ...ACTIVITY_TYPES.map(a => ({ value: a.value, label: `${a.emoji} ${a.label}` })),
-];
+function sortVisits(visits: Visit[], sort: SortOption): Visit[] {
+  const copy = [...visits];
+  if (sort === 'date') return copy.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  if (sort === 'best') return copy.sort((a, b) => b.rank_order - a.rank_order);
+  return copy.sort((a, b) => a.rank_order - b.rank_order);
+}
 
 export default function HomeScreen() {
   const [visits, setVisits] = useState<Visit[]>([]);
-  const [query, setQuery] = useState('');
-  const [activeCategory, setActiveCategory] = useState<ActivityType | null>(null);
+  const [tab, setTab] = useState<Tab>('picks');
+  const [sort, setSort] = useState<SortOption>('best');
 
   useFocusEffect(
     useCallback(() => {
-      setVisits(getVisitsFiltered({ query, activityType: activeCategory }));
-    }, [query, activeCategory])
+      setVisits(getAllVisits());
+    }, [])
   );
 
-  const handleQuery = (text: string) => {
-    setQuery(text);
-    setVisits(getVisitsFiltered({ query: text, activityType: activeCategory }));
-  };
-
-  const handleCategory = (cat: ActivityType | null) => {
-    setActiveCategory(cat);
-    setVisits(getVisitsFiltered({ query, activityType: cat }));
-  };
-
-  const isFiltering = query.length > 0 || activeCategory !== null;
-  const topPicks = visits.filter(v => v.rating >= 7);
-  const tryAgain = visits.filter(v => v.rating >= 4 && v.rating < 7);
-  const ranked = [...visits].sort((a, b) => b.rank_order - a.rank_order);
+  const topPicks = [...visits].sort((a, b) => b.rank_order - a.rank_order).filter(v => v.rating >= 7);
+  const allSorted = sortVisits(visits, sort);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>DateSpot</Text>
       </View>
 
-      {/* Search */}
-      <View style={styles.searchRow}>
-        <View style={styles.searchBox}>
-          <Ionicons name="search-outline" size={16} color={C.muted} style={{ marginRight: 8 }} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Find your next spot..."
-            placeholderTextColor={C.muted}
-            value={query}
-            onChangeText={handleQuery}
-            returnKeyType="search"
-            clearButtonMode="while-editing"
-          />
-        </View>
+      {/* Segmented control */}
+      <View style={styles.segControl}>
+        <Pressable
+          style={[styles.segBtn, tab === 'picks' && styles.segBtnActive]}
+          onPress={() => setTab('picks')}
+        >
+          <Text style={[styles.segBtnText, tab === 'picks' && styles.segBtnTextActive]}>
+            Favorites
+          </Text>
+        </Pressable>
+        <Pressable
+          style={[styles.segBtn, tab === 'all' && styles.segBtnActive]}
+          onPress={() => setTab('all')}
+        >
+          <Text style={[styles.segBtnText, tab === 'all' && styles.segBtnTextActive]}>
+            All Spots
+          </Text>
+        </Pressable>
       </View>
 
-      {/* Category chips */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.chipsScroll}
-        contentContainerStyle={styles.chipsContent}
-      >
-        {CATEGORY_FILTERS.map(cat => {
-          const active = activeCategory === cat.value;
-          return (
-            <Pressable
-              key={cat.value ?? 'all'}
-              style={[styles.chip, active && styles.chipActive]}
-              onPress={() => handleCategory(cat.value)}
-            >
-              <Text style={[styles.chipText, active && styles.chipTextActive]}>
-                {cat.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
-
-      {/* Content */}
-      {visits.length === 0 ? (
-        <View style={styles.emptyState}>
-          {isFiltering ? (
-            <>
-              <Text style={styles.emptyEmoji}>🔍</Text>
-              <Text style={styles.emptyTitle}>No matches</Text>
-              <Text style={styles.emptyBody}>Try a different search or category.</Text>
-            </>
-          ) : (
-            <>
-              <Text style={styles.emptyEmoji}>🗺</Text>
-              <Text style={styles.emptyTitle}>No spots yet</Text>
-              <Text style={styles.emptyBody}>Log your first date spot and it'll show up here.</Text>
-              <Pressable style={styles.logCta} onPress={() => router.push('/(tabs)/map')}>
-                <Text style={styles.logCtaText}>Log a spot</Text>
-              </Pressable>
-            </>
-          )}
-        </View>
+      {tab === 'picks' ? (
+        <PicksTab visits={topPicks} hasAny={visits.length > 0} />
       ) : (
-        <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
-          {isFiltering ? (
-            <View style={styles.section}>
-              <Text style={styles.sectionMeta}>{visits.length} spot{visits.length !== 1 ? 's' : ''}</Text>
-              {ranked.map((v, i) => <RankedRow key={v.id} visit={v} rank={i + 1} />)}
-            </View>
-          ) : (
-            <>
-              {topPicks.length > 0 && (
-                <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>Your picks</Text>
-                  {topPicks.map(v => <PickCard key={v.id} visit={v} />)}
-                </View>
-              )}
-              {tryAgain.length > 0 && (
-                <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>Try again</Text>
-                  {tryAgain.map(v => <TryCard key={v.id} visit={v} />)}
-                </View>
-              )}
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>All your spots</Text>
-                {ranked.map((v, i) => <RankedRow key={v.id} visit={v} rank={i + 1} />)}
-              </View>
-            </>
-          )}
-          <View style={{ height: 40 }} />
-        </ScrollView>
+        <AllTab visits={allSorted} sort={sort} onSort={setSort} />
       )}
     </SafeAreaView>
   );
 }
 
-function PickCard({ visit }: { visit: Visit }) {
-  const info = ACTIVITY_TYPES.find(a => a.value === visit.activity_type);
-  const photo = visit.photos?.[0];
-  const color = ratingColor(visit.rating);
+function PicksTab({ visits, hasAny }: { visits: Visit[]; hasAny: boolean }) {
+  if (!hasAny) {
+    return (
+      <View style={styles.empty}>
+        <Text style={styles.emptyEmoji}>🗺</Text>
+        <Text style={styles.emptyTitle}>No spots yet</Text>
+        <Text style={styles.emptyBody}>Log your first date spot and it'll show up here.</Text>
+        <Pressable style={styles.logCta} onPress={() => router.push('/(tabs)/map')}>
+          <Text style={styles.logCtaText}>Log a spot</Text>
+        </Pressable>
+      </View>
+    );
+  }
+  if (visits.length === 0) {
+    return (
+      <View style={styles.empty}>
+        <Text style={styles.emptyEmoji}>⭐️</Text>
+        <Text style={styles.emptyTitle}>No favorites yet</Text>
+        <Text style={styles.emptyBody}>Spots you rate highly will appear here.</Text>
+      </View>
+    );
+  }
   return (
-    <Pressable
-      style={({ pressed }) => [styles.pickCard, pressed && { opacity: 0.85 }]}
-      onPress={() => router.push(`/spot/${visit.id}`)}
-    >
-      <View style={styles.pickPhoto}>
-        {photo ? (
-          <Image source={{ uri: photo }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-        ) : (
-          <View style={[StyleSheet.absoluteFill, { backgroundColor: C.placeholder }]} />
-        )}
-        <View style={[styles.ratingPill, { backgroundColor: color }]}>
-          <Text style={styles.ratingPillText}>{formatRating(visit.rating)}</Text>
+    <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false} contentContainerStyle={styles.listContent}>
+      {visits.map(v => <SpotRow key={v.id} visit={v} />)}
+    </ScrollView>
+  );
+}
+
+function AllTab({ visits, sort, onSort }: { visits: Visit[]; sort: SortOption; onSort: (s: SortOption) => void }) {
+  return (
+    <>
+      <View style={styles.sortRow}>
+        {SORT_OPTIONS.map(opt => (
+          <Pressable
+            key={opt.value}
+            style={[styles.sortChip, sort === opt.value && styles.sortChipActive]}
+            onPress={() => onSort(opt.value)}
+          >
+            <Text style={[styles.sortChipText, sort === opt.value && styles.sortChipTextActive]}>
+              {opt.label}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+      {visits.length === 0 ? (
+        <View style={styles.empty}>
+          <Text style={styles.emptyEmoji}>🗺</Text>
+          <Text style={styles.emptyTitle}>No spots yet</Text>
+          <Text style={styles.emptyBody}>Log your first date spot and it'll show up here.</Text>
+          <Pressable style={styles.logCta} onPress={() => router.push('/(tabs)/map')}>
+            <Text style={styles.logCtaText}>Log a spot</Text>
+          </Pressable>
         </View>
-      </View>
-      <View style={styles.pickInfo}>
-        <Text style={styles.pickName} numberOfLines={1}>{visit.venue_name}</Text>
-        <Text style={styles.pickMeta}>{info?.label} · {PRICE_LABELS[visit.price as Price]}</Text>
-      </View>
-    </Pressable>
+      ) : (
+        <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false} contentContainerStyle={styles.listContent}>
+          {visits.map(v => <SpotRow key={v.id} visit={v} />)}
+        </ScrollView>
+      )}
+    </>
   );
 }
 
-function TryCard({ visit }: { visit: Visit }) {
+function SpotRow({ visit }: { visit: Visit }) {
   const info = ACTIVITY_TYPES.find(a => a.value === visit.activity_type);
-  const photo = visit.photos?.[0];
   const color = ratingColor(visit.rating);
-  return (
-    <Pressable
-      style={({ pressed }) => [styles.tryCard, pressed && { opacity: 0.85 }]}
-      onPress={() => router.push(`/spot/${visit.id}`)}
-    >
-      <View style={styles.tryThumb}>
-        {photo ? (
-          <Image source={{ uri: photo }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-        ) : (
-          <View style={[StyleSheet.absoluteFill, { backgroundColor: C.placeholder }]} />
-        )}
-      </View>
-      <View style={styles.tryInfo}>
-        <Text style={styles.tryName} numberOfLines={1}>{visit.venue_name}</Text>
-        <Text style={styles.tryMeta}>{info?.label} · {PRICE_LABELS[visit.price as Price]}</Text>
-      </View>
-      <View style={[styles.tryRating, { backgroundColor: color + '22' }]}>
-        <Text style={[styles.tryRatingText, { color }]}>{formatRating(visit.rating)}</Text>
-      </View>
-    </Pressable>
-  );
-}
+  const dateStr = friendlyDate(visit.visited_at || visit.created_at);
+  const preview = visit.notes?.trim().slice(0, 70) ?? null;
 
-function RankedRow({ visit, rank }: { visit: Visit; rank: number }) {
-  const info = ACTIVITY_TYPES.find(a => a.value === visit.activity_type);
-  const color = ratingColor(visit.rating);
   return (
     <Pressable
-      style={({ pressed }) => [styles.rankedRow, pressed && { opacity: 0.65 }]}
+      style={({ pressed }) => [styles.row, pressed && { opacity: 0.7 }]}
       onPress={() => router.push(`/spot/${visit.id}`)}
     >
-      <Text style={styles.rankNum}>{rank}</Text>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.rankName} numberOfLines={1}>{visit.venue_name}</Text>
-        <Text style={styles.rankMeta}>{info?.label} · {PRICE_LABELS[visit.price as Price]}</Text>
+      <View style={styles.rowEmoji}>
+        <Text style={styles.rowEmojiText}>{info?.emoji ?? '📍'}</Text>
       </View>
-      <Text style={[styles.rankScore, { color }]}>{formatRating(visit.rating)}</Text>
+
+      <View style={styles.rowBody}>
+        <View style={styles.rowTop}>
+          <Text style={styles.rowName} numberOfLines={1}>{visit.venue_name}</Text>
+          <View style={[styles.ratingPill, { backgroundColor: color + '2E' }]}>
+            <Text style={[styles.ratingPillText, { color }]}>{formatRating(visit.rating)}</Text>
+          </View>
+        </View>
+        <Text style={styles.rowMeta}>
+          {info?.label} · {PRICE_LABELS[visit.price as Price]} · {dateStr}
+        </Text>
+        {preview ? (
+          <Text style={styles.rowPreview} numberOfLines={1}>{preview}</Text>
+        ) : null}
+      </View>
     </Pressable>
   );
 }
@@ -234,6 +192,7 @@ function RankedRow({ visit, rank }: { visit: Visit; rank: number }) {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.bg },
   scroll: { flex: 1 },
+  listContent: { paddingHorizontal: 16, paddingBottom: 40 },
 
   header: {
     paddingHorizontal: 20, paddingTop: 6, paddingBottom: 10,
@@ -244,81 +203,61 @@ const styles = StyleSheet.create({
     fontFamily: 'Georgia', letterSpacing: -0.2,
   },
 
-  searchRow: { paddingHorizontal: 16, paddingBottom: 10 },
-  searchBox: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#EDE8E0', borderRadius: 12,
-    paddingHorizontal: 12, paddingVertical: 11,
+  segControl: {
+    flexDirection: 'row', marginHorizontal: 16, marginBottom: 14,
+    backgroundColor: C.segBg, borderRadius: 10, padding: 3,
   },
-  searchInput: { flex: 1, fontSize: 15, color: C.primary },
-
-  chipsScroll: { flexGrow: 0 },
-  chipsContent: { paddingHorizontal: 16, gap: 8, paddingBottom: 14 },
-  chip: {
-    paddingHorizontal: 16, paddingVertical: 8,
-    borderRadius: 20, backgroundColor: C.bg,
-    borderWidth: 1, borderColor: C.border,
+  segBtn: {
+    flex: 1, paddingVertical: 7, borderRadius: 8, alignItems: 'center',
   },
-  chipActive: { backgroundColor: C.primary, borderColor: C.primary },
-  chipText: { fontSize: 13, fontWeight: '500', color: C.muted },
-  chipTextActive: { color: '#fff' },
-
-  section: { paddingHorizontal: 16, marginBottom: 4 },
-  sectionTitle: {
-    fontSize: 20, fontWeight: '700', color: C.primary,
-    fontFamily: 'Georgia', marginBottom: 14,
-  },
-  sectionMeta: { fontSize: 13, color: C.muted, marginBottom: 10 },
-
-  pickCard: {
-    backgroundColor: C.card, borderRadius: 16, overflow: 'hidden',
-    marginBottom: 14,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.07, shadowRadius: 8, elevation: 2,
-  },
-  pickPhoto: { height: 170, backgroundColor: C.placeholder },
-  ratingPill: {
-    position: 'absolute', top: 10, right: 10,
-    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20,
-  },
-  ratingPillText: { fontSize: 12, fontWeight: '700', color: '#fff' },
-  pickInfo: { padding: 14 },
-  pickName: { fontSize: 16, fontWeight: '700', color: C.primary, marginBottom: 4 },
-  pickMeta: { fontSize: 13, color: C.muted },
-
-  tryCard: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: C.card, borderRadius: 16,
-    padding: 12, gap: 12, marginBottom: 10,
+  segBtnActive: {
+    backgroundColor: C.card,
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
+    shadowOpacity: 0.1, shadowRadius: 3, elevation: 2,
   },
-  tryThumb: {
-    width: 70, height: 70, borderRadius: 12,
-    backgroundColor: C.placeholder, overflow: 'hidden',
-  },
-  tryInfo: { flex: 1 },
-  tryName: { fontSize: 15, fontWeight: '600', color: C.primary, marginBottom: 4 },
-  tryMeta: { fontSize: 13, color: C.muted },
-  tryRating: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 },
-  tryRatingText: { fontSize: 13, fontWeight: '700' },
+  segBtnText: { fontSize: 13, fontWeight: '500', color: C.muted },
+  segBtnTextActive: { color: C.primary, fontWeight: '600' },
 
-  rankedRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 14,
-    paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: C.border,
+  sortRow: {
+    flexDirection: 'row', gap: 8, paddingHorizontal: 16, marginBottom: 12, flexWrap: 'wrap',
   },
-  rankNum: { fontSize: 14, fontWeight: '600', color: C.border, width: 20, textAlign: 'center' },
-  rankName: { fontSize: 15, fontWeight: '600', color: C.primary },
-  rankMeta: { fontSize: 12, color: C.muted, marginTop: 2 },
-  rankScore: { fontSize: 16, fontWeight: '700' },
+  sortChip: {
+    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20,
+    backgroundColor: C.bg, borderWidth: 1, borderColor: C.border,
+  },
+  sortChipActive: { backgroundColor: C.primary, borderColor: C.primary },
+  sortChipText: { fontSize: 12, fontWeight: '600', color: C.muted },
+  sortChipTextActive: { color: '#fff' },
 
-  emptyState: {
+  row: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 12,
+    paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.border,
+  },
+  rowEmoji: {
+    width: 40, height: 40, borderRadius: 12,
+    backgroundColor: C.card, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: C.border, marginTop: 1,
+  },
+  rowEmojiText: { fontSize: 19 },
+  rowBody: { flex: 1 },
+  rowTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 },
+  rowName: { fontSize: 15, fontWeight: '600', color: C.primary, flex: 1, marginRight: 8 },
+  rowMeta: { fontSize: 12, color: C.muted, marginBottom: 4 },
+  rowPreview: { fontSize: 12, color: '#A0927E', fontStyle: 'italic', lineHeight: 16 },
+
+  ratingPill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+  ratingPillText: { fontSize: 12, fontWeight: '800' },
+
+  empty: {
     flex: 1, alignItems: 'center', justifyContent: 'center',
     paddingHorizontal: 40, paddingTop: 60,
   },
-  emptyEmoji: { fontSize: 48, marginBottom: 16 },
-  emptyTitle: { fontSize: 20, fontWeight: '700', color: C.primary, marginBottom: 8 },
+  emptyEmoji: { fontSize: 44, marginBottom: 14 },
+  emptyTitle: {
+    fontSize: 20, fontWeight: '700', color: C.primary,
+    fontFamily: 'Georgia', marginBottom: 8,
+  },
   emptyBody: { fontSize: 15, color: C.muted, textAlign: 'center', lineHeight: 22, marginBottom: 24 },
-  logCta: { backgroundColor: C.accent, borderRadius: 14, paddingVertical: 14, paddingHorizontal: 32 },
-  logCtaText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  logCta: { backgroundColor: '#E76F51', borderRadius: 14, paddingVertical: 13, paddingHorizontal: 28 },
+  logCtaText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 });
