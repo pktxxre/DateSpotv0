@@ -167,10 +167,13 @@ export function formatRating(rating: number): string {
 export function friendlyDate(raw: string): string {
   if (!raw) return '';
   if (!/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw;
-  const d = new Date(raw);
+  // Parse as local date to avoid UTC-offset "Today/Yesterday" errors in western timezones.
+  const [year, month, day] = raw.split('-').map(Number);
+  const d = new Date(year, month - 1, day);
   if (isNaN(d.getTime())) return raw;
   const now = new Date();
-  const diffDays = Math.floor((now.getTime() - d.getTime()) / 86400000);
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const diffDays = Math.round((todayStart.getTime() - d.getTime()) / 86400000);
   if (diffDays === 0) return 'Today';
   if (diffDays === 1) return 'Yesterday';
   if (diffDays < 7) return d.toLocaleDateString('en-US', { weekday: 'long' });

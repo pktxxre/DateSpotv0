@@ -50,11 +50,13 @@ export default function MapScreen() {
   const [cmpState, setCmpState] = useState<ComparisonState | null>(null);
   const sheetRef = useRef<BottomSheet>(null);
   const mapRef = useRef<MapView>(null);
+  const openLogHandled = useRef(false);
 
   useFocusEffect(
     useCallback(() => {
       setVisits(getAllVisits());
-      if (openLogParam === '1') {
+      if (openLogParam === '1' && !openLogHandled.current) {
+        openLogHandled.current = true;
         setSelectedVisit(null);
         setStep('location');
         sheetRef.current?.snapToIndex(1);
