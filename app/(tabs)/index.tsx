@@ -23,6 +23,10 @@ function sortVisits(visits: Visit[], sort: SortOption): Visit[] {
   return copy.sort((a, b) => a.rank_order - b.rank_order);
 }
 
+function openLogFlow() {
+  router.push({ pathname: '/(tabs)/map', params: { openLog: '1' } });
+}
+
 export default function HomeScreen() {
   const [visits, setVisits] = useState<Visit[]>([]);
   const [tab, setTab] = useState<Tab>('picks');
@@ -34,7 +38,6 @@ export default function HomeScreen() {
     }, [])
   );
 
-  const topPicks = [...visits].sort((a, b) => b.rank_order - a.rank_order).filter(v => v.rating >= 7);
   const allSorted = sortVisits(visits, sort);
 
   return (
@@ -64,39 +67,56 @@ export default function HomeScreen() {
       </View>
 
       {tab === 'picks' ? (
-        <PicksTab visits={topPicks} hasAny={visits.length > 0} />
+        <PicksTab visits={visits} />
       ) : (
         <AllTab visits={allSorted} sort={sort} onSort={setSort} />
       )}
+
+      {/* Fixed bottom button */}
+      <SafeAreaView edges={['bottom']} style={styles.bottomBar}>
+        <Pressable
+          style={({ pressed }) => [styles.logCta, pressed && { opacity: 0.85 }]}
+          onPress={openLogFlow}
+        >
+          <Text style={styles.logCtaText}>+ Log a new spot</Text>
+        </Pressable>
+      </SafeAreaView>
     </SafeAreaView>
   );
 }
 
-function PicksTab({ visits, hasAny }: { visits: Visit[]; hasAny: boolean }) {
-  if (!hasAny) {
+function PicksTab({ visits }: { visits: Visit[] }) {
+  if (visits.length === 0) {
     return (
       <View style={styles.empty}>
         <Text style={styles.emptyEmoji}>🗺</Text>
         <Text style={styles.emptyTitle}>No spots yet</Text>
-        <Text style={styles.emptyBody}>Log your first date spot and it'll show up here.</Text>
-        <Pressable style={styles.logCta} onPress={() => router.push('/(tabs)/map')}>
-          <Text style={styles.logCtaText}>Log a spot</Text>
-        </Pressable>
+        <Text style={styles.emptyBody}>Log your first date spot and your favorites will appear here by category.</Text>
       </View>
     );
   }
-  if (visits.length === 0) {
-    return (
-      <View style={styles.empty}>
-        <Text style={styles.emptyEmoji}>⭐️</Text>
-        <Text style={styles.emptyTitle}>No favorites yet</Text>
-        <Text style={styles.emptyBody}>Spots you rate highly will appear here.</Text>
-      </View>
-    );
-  }
+
+  const categories = ACTIVITY_TYPES
+    .map(type => ({
+      ...type,
+      spots: visits
+        .filter(v => v.activity_type === type.value)
+        .sort((a, b) => b.rank_order - a.rank_order)
+        .slice(0, 3),
+    }))
+    .filter(c => c.spots.length > 0);
+
   return (
     <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false} contentContainerStyle={styles.listContent}>
-      {visits.map(v => <SpotRow key={v.id} visit={v} />)}
+      {categories.map(cat => (
+        <View key={cat.value} style={styles.categorySection}>
+          <View style={styles.categoryHeader}>
+            <Text style={styles.categoryEmoji}>{cat.emoji}</Text>
+            <Text style={styles.categoryTitle}>{cat.label}</Text>
+          </View>
+          {cat.spots.map(v => <SpotRow key={v.id} visit={v} />)}
+        </View>
+      ))}
     </ScrollView>
   );
 }
@@ -134,6 +154,7 @@ function AllTab({ visits, sort, onSort }: { visits: Visit[]; sort: SortOption; o
     </>
   );
 }
+
 
 function SpotRow({ visit }: { visit: Visit }) {
   const info = ACTIVITY_TYPES.find(a => a.value === visit.activity_type);
@@ -227,6 +248,24 @@ const styles = StyleSheet.create({
   ratingPill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
   ratingPillText: { fontSize: 12, fontWeight: '800' },
 
+  categorySection: { marginBottom: 28 },
+  categoryHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
+  categoryEmoji: { fontSize: 20 },
+  categoryTitle: {
+    fontSize: 16, fontWeight: '700', color: T.primary, fontFamily: 'Georgia',
+  },
+
+  bottomBar: {
+    paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4,
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: T.border,
+    backgroundColor: T.bg,
+  },
+  logCta: {
+    backgroundColor: T.accent, borderRadius: 14,
+    paddingVertical: 15, alignItems: 'center',
+  },
+  logCtaText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+
   empty: {
     flex: 1, alignItems: 'center', justifyContent: 'center',
     paddingHorizontal: 40, paddingTop: 60,
@@ -236,7 +275,5 @@ const styles = StyleSheet.create({
     fontSize: 20, fontWeight: '700', color: T.primary,
     fontFamily: 'Georgia', marginBottom: 8,
   },
-  emptyBody: { fontSize: 15, color: T.muted, textAlign: 'center', lineHeight: 22, marginBottom: 24 },
-  logCta: { backgroundColor: T.accent, borderRadius: 14, paddingVertical: 13, paddingHorizontal: 28 },
-  logCtaText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  emptyBody: { fontSize: 15, color: T.muted, textAlign: 'center', lineHeight: 22 },
 });

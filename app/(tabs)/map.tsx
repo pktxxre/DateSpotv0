@@ -5,7 +5,7 @@ import {
 import MapView, { Marker, Region, MapPressEvent } from 'react-native-maps';
 import BottomSheet, { BottomSheetView } from '@gorhom/bottom-sheet';
 import * as Location from 'expo-location';
-import { useFocusEffect, router } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Crypto from 'expo-crypto';
 import {
@@ -41,6 +41,7 @@ interface DraftVisit {
 }
 
 export default function MapScreen() {
+  const { openLog: openLogParam } = useLocalSearchParams<{ openLog?: string }>();
   const [visits, setVisits] = useState<Visit[]>([]);
   const [selectedVisit, setSelectedVisit] = useState<Visit | null>(null);
   const [step, setStep] = useState<Step | null>(null);
@@ -53,6 +54,11 @@ export default function MapScreen() {
   useFocusEffect(
     useCallback(() => {
       setVisits(getAllVisits());
+      if (openLogParam === '1') {
+        setSelectedVisit(null);
+        setStep('location');
+        sheetRef.current?.snapToIndex(1);
+      }
       loadDraft().then((saved) => {
         if (saved && saved.step !== 'done') {
           Alert.alert(
