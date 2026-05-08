@@ -5,13 +5,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { getAllVisits, Visit, ACTIVITY_TYPES, Price, PRICE_LABELS, formatRating, ratingColor, friendlyDate } from '@/lib/visits';
 import { T } from '@/lib/theme';
 
-const CATEGORY_BANNERS: Partial<Record<string, any>> = {
-  food:          require('../../assets/images/category-food.jpg'),
-  drinks:        require('../../assets/images/category-drinks.jpg'),
-  outdoors:      require('../../assets/images/category-outdoors.avif'),
-  view:          require('../../assets/images/category-view.jpg'),
-  entertainment: require('../../assets/images/category-entertainment.jpg'),
-  other:         require('../../assets/images/category-other.jpg'),
+type BannerEntry = { source: any; translateY?: number };
+
+const CATEGORY_BANNERS: Partial<Record<string, BannerEntry>> = {
+  food:          { source: require('../../assets/images/category-food.jpg') },
+  drinks:        { source: require('../../assets/images/category-drinks.jpg') },
+  outdoors:      { source: require('../../assets/images/category-outdoors.avif') },
+  view:          { source: require('../../assets/images/category-view.jpg') },
+  entertainment: { source: require('../../assets/images/category-entertainment.jpg') },
+  other:         { source: require('../../assets/images/category-other.jpg'), translateY: 55 },
 };
 
 type Tab = 'picks' | 'all';
@@ -123,7 +125,11 @@ function PicksTab({ visits }: { visits: Visit[] }) {
         return (
           <View key={cat.value} style={styles.categorySection}>
             {banner ? (
-              <ImageBackground source={banner} style={styles.categoryBanner} imageStyle={styles.categoryBannerImg}>
+              <ImageBackground
+                source={banner.source}
+                style={styles.categoryBanner}
+                imageStyle={banner.translateY ? { transform: [{ translateY: banner.translateY }] } : undefined}
+              >
                 <View style={styles.categoryBannerOverlay}>
                   <Text style={styles.categoryBannerTitle}>{cat.label}</Text>
                   <Text style={styles.categoryBannerCount}>Top {cat.spots.length}</Text>
