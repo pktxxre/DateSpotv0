@@ -120,7 +120,6 @@ function PicksTab({ visits }: { visits: Visit[] }) {
             {banner ? (
               <ImageBackground source={banner} style={styles.categoryBanner} imageStyle={styles.categoryBannerImg}>
                 <View style={styles.categoryBannerOverlay}>
-                  <Text style={styles.categoryBannerEmoji}>{cat.emoji}</Text>
                   <Text style={styles.categoryBannerTitle}>{cat.label}</Text>
                   <Text style={styles.categoryBannerCount}>Top {cat.spots.length}</Text>
                 </View>
@@ -210,7 +209,7 @@ function SpotRow({ visit }: { visit: Visit }) {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: T.bg },
   scroll: { flex: 1 },
-  listContent: { paddingHorizontal: 16, paddingBottom: 40 },
+  listContent: { paddingBottom: 40 },
 
   header: {
     paddingHorizontal: 20, paddingTop: 10, paddingBottom: 14,
@@ -252,7 +251,8 @@ const styles = StyleSheet.create({
 
   row: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 12,
-    paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.border,
+    paddingVertical: 12, paddingHorizontal: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.border,
   },
   rowEmoji: {
     width: 40, height: 40, borderRadius: 12,
@@ -271,20 +271,19 @@ const styles = StyleSheet.create({
 
   categorySection: { marginBottom: 28 },
 
-  categoryBanner: { height: 120, borderRadius: 16, overflow: 'hidden', marginBottom: 12 },
-  categoryBannerImg: { borderRadius: 16 },
+  categoryBanner: { height: 90, marginBottom: 12 },
+  categoryBannerImg: {},
   categoryBannerOverlay: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.42)',
-    borderRadius: 16, padding: 16, justifyContent: 'flex-end', gap: 2,
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
+    paddingHorizontal: 20, justifyContent: 'flex-end', paddingBottom: 12, gap: 1,
   },
-  categoryBannerEmoji: { fontSize: 24 },
   categoryBannerTitle: {
-    fontSize: 22, fontWeight: '700', color: '#fff',
-    fontFamily: 'Georgia', letterSpacing: -0.3,
+    fontSize: 26, fontWeight: '700', color: '#fff',
+    fontFamily: 'Georgia', letterSpacing: -0.4,
   },
-  categoryBannerCount: { fontSize: 12, color: 'rgba(255,255,255,0.75)', fontWeight: '500' },
+  categoryBannerCount: { fontSize: 13, color: 'rgba(255,255,255,0.75)', fontWeight: '600' },
 
-  categoryHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
+  categoryHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10, paddingHorizontal: 16 },
   categoryEmoji: { fontSize: 20 },
   categoryTitle: {
     fontSize: 16, fontWeight: '700', color: T.primary, fontFamily: 'Georgia',
