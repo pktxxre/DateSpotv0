@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import { StyleSheet, View, Text, ScrollView, Pressable, ImageBackground, Dimensions } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, Pressable, ImageBackground, Dimensions, Alert, TextInput, Share } from 'react-native';
 import Animated, { useSharedValue, withTiming, useAnimatedStyle } from 'react-native-reanimated';
 import { useFocusEffect, router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { scheduleOpenLog, scheduleOpenFutureDate } from './map';
-import { getAllFutureSpots, FutureSpot } from '@/lib/future';
+import { getAllFutureSpots, deleteFutureSpot, updateFutureSpot, FutureSpot } from '@/lib/future';
+import { Ionicons } from '@expo/vector-icons';
 
 const SCREEN_W = Dimensions.get('window').width;
 import { getAllVisits, Visit, ACTIVITY_TYPES, Price, PRICE_LABELS, formatRating, ratingColor, friendlyDate } from '@/lib/visits';
@@ -19,14 +20,15 @@ const CATEGORY_BANNERS: Partial<Record<string, any>> = {
   other:         require('../../assets/images/category-other.jpg'),
 };
 
-type Tab = 'picks' | 'all' | 'future';
-type SortOption = 'date' | 'best' | 'worst';
+type Tab = 'picks' | 'all' | 'future' | 'activity';
+type SortOption = 'best' | 'worst';
 
 const SORT_OPTIONS: { value: SortOption; label: string }[] = [
-  { value: 'date', label: 'Most Recent' },
   { value: 'best', label: 'Best to Worst' },
   { value: 'worst', label: 'Worst to Best' },
 ];
+
+const RATING_UNLOCK_COUNT = 3;
 
 function visitDate(v: Visit): number {
   const raw = v.visited_at;
@@ -41,7 +43,6 @@ function visitDate(v: Visit): number {
 
 function sortVisits(visits: Visit[], sort: SortOption): Visit[] {
   const copy = [...visits];
-  if (sort === 'date') return copy.sort((a, b) => visitDate(b) - visitDate(a));
   if (sort === 'best') return copy.sort((a, b) => b.rating - a.rating);
   return copy.sort((a, b) => a.rating - b.rating);
 }
@@ -63,6 +64,8 @@ export default function HomeScreen() {
   const [sort, setSort] = useState<SortOption>('best');
   const slideX = useSharedValue(0);
 
+  const refreshFuture = useCallback(() => setFutureSpots(getAllFutureSpots()), []);
+
   useFocusEffect(
     useCallback(() => {
       setVisits(getAllVisits());
@@ -70,9 +73,10 @@ export default function HomeScreen() {
     }, [])
   );
 
+  const tabPositions: Record<Tab, number> = { picks: 0, all: -SCREEN_W, future: -SCREEN_W * 2, activity: -SCREEN_W * 3 };
+
   useEffect(() => {
-    const x = tab === 'picks' ? 0 : tab === 'all' ? -SCREEN_W : -SCREEN_W * 2;
-    slideX.value = withTiming(x, { duration: 260 });
+    slideX.value = withTiming(tabPositions[tab], { duration: 260 });
   }, [tab]);
 
   const slideStyle = useAnimatedStyle(() => ({
@@ -80,6 +84,7 @@ export default function HomeScreen() {
   }));
 
   const allSorted = sortVisits(visits, sort);
+  const hideRating = visits.length < RATING_UNLOCK_COUNT;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -88,35 +93,19 @@ export default function HomeScreen() {
         <Text style={styles.headerSub}>Your favorite places</Text>
       </View>
 
-      {/* Segmented control */}
+      {/* Segmented control — 4 tabs */}
       <View style={styles.segControl}>
-        <Pressable
-          style={[styles.segBtn, tab === 'picks' && styles.segBtnActive]}
-          onPress={() => setTab('picks')}
-        >
-          <Text style={[styles.segBtnText, tab === 'picks' && styles.segBtnTextActive]}>
-            Favorites
-          </Text>
-        </Pressable>
-        <Pressable
-          style={[styles.segBtn, tab === 'all' && styles.segBtnActive]}
-          onPress={() => setTab('all')}
-        >
-          <Text style={[styles.segBtnText, tab === 'all' && styles.segBtnTextActive]}>
-            All Spots
-          </Text>
-        </Pressable>
-        <Pressable
-          style={[styles.segBtn, tab === 'future' && styles.segBtnActive]}
-          onPress={() => setTab('future')}
-        >
-          <Text style={[styles.segBtnText, tab === 'future' && styles.segBtnTextActive]}>
-            Future Dates
-          </Text>
-        </Pressable>
+        {(['picks', 'all', 'future', 'activity'] as Tab[]).map((t) => {
+          const labels: Record<Tab, string> = { picks: 'Favorites', all: 'All', future: 'Future', activity: 'Activity' };
+          return (
+            <Pressable key={t} style={[styles.segBtn, tab === t && styles.segBtnActive]} onPress={() => setTab(t)}>
+              <Text style={[styles.segBtnText, tab === t && styles.segBtnTextActive]}>{labels[t]}</Text>
+            </Pressable>
+          );
+        })}
       </View>
 
-      {/* Sort row — always rendered so content doesn't jump when switching tabs */}
+      {/* Sort row — only visible on All tab */}
       <View style={[styles.sortRow, tab !== 'all' && styles.sortRowHidden]}>
         {SORT_OPTIONS.map(opt => (
           <Pressable
@@ -135,13 +124,16 @@ export default function HomeScreen() {
       <View style={styles.slideContainer}>
         <Animated.View style={[styles.slidePanels, slideStyle]}>
           <View style={styles.slidePanel}>
-            <PicksTab visits={visits} />
+            <PicksTab visits={visits} hideRating={hideRating} />
           </View>
           <View style={styles.slidePanel}>
-            <AllTab visits={allSorted} />
+            <AllTab visits={allSorted} hideRating={hideRating} />
           </View>
           <View style={styles.slidePanel}>
-            <FutureTab spots={futureSpots} />
+            <FutureTab spots={futureSpots} onRefresh={refreshFuture} />
+          </View>
+          <View style={styles.slidePanel}>
+            <ActivityTab visits={visits} />
           </View>
         </Animated.View>
       </View>
@@ -149,7 +141,7 @@ export default function HomeScreen() {
   );
 }
 
-function PicksTab({ visits }: { visits: Visit[] }) {
+function PicksTab({ visits, hideRating }: { visits: Visit[]; hideRating: boolean }) {
   if (visits.length === 0) {
     return (
       <View style={styles.emptyCenter}>
@@ -190,7 +182,7 @@ function PicksTab({ visits }: { visits: Visit[] }) {
                 <Text style={styles.categoryTitle}>{cat.label}</Text>
               </View>
             )}
-            {cat.spots.map(v => <SpotRow key={v.id} visit={v} />)}
+            {cat.spots.map(v => <SpotRow key={v.id} visit={v} hideRating={hideRating} />)}
           </View>
         );
       })}
@@ -198,7 +190,7 @@ function PicksTab({ visits }: { visits: Visit[] }) {
   );
 }
 
-function AllTab({ visits }: { visits: Visit[] }) {
+function AllTab({ visits, hideRating }: { visits: Visit[]; hideRating: boolean }) {
   return (
     <>
       {visits.length === 0 ? (
@@ -211,7 +203,7 @@ function AllTab({ visits }: { visits: Visit[] }) {
         </View>
       ) : (
         <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false} contentContainerStyle={styles.listContent}>
-          {visits.map(v => <SpotRow key={v.id} visit={v} />)}
+          {visits.map(v => <SpotRow key={v.id} visit={v} hideRating={hideRating} />)}
         </ScrollView>
       )}
     </>
@@ -219,7 +211,7 @@ function AllTab({ visits }: { visits: Visit[] }) {
 }
 
 
-function FutureTab({ spots }: { spots: FutureSpot[] }) {
+function FutureTab({ spots, onRefresh: _ }: { spots: FutureSpot[]; onRefresh: () => void }) {
   if (spots.length === 0) {
     return (
       <View style={styles.emptyCenter}>
@@ -241,7 +233,10 @@ function FutureTab({ spots }: { spots: FutureSpot[] }) {
 function FutureRow({ spot }: { spot: FutureSpot }) {
   const dateStr = friendlyDate(spot.created_at);
   return (
-    <View style={styles.row}>
+    <Pressable
+      style={({ pressed }) => [styles.row, pressed && { opacity: 0.7 }]}
+      onPress={() => router.push(`/future/${spot.id}` as any)}
+    >
       <View style={styles.rowBody}>
         <View style={styles.rowTop}>
           <Text style={styles.rowName} numberOfLines={1}>{spot.venue_name}</Text>
@@ -251,11 +246,90 @@ function FutureRow({ spot }: { spot: FutureSpot }) {
         </View>
         <Text style={styles.rowDate}>Added {dateStr}</Text>
       </View>
+    </Pressable>
+  );
+}
+
+function ActivityTab({ visits }: { visits: Visit[] }) {
+  const [filter, setFilter] = useState<'mine' | 'friends'>('mine');
+  const [query, setQuery] = useState('');
+
+  const recent = [...visits].sort((a, b) => visitDate(b) - visitDate(a));
+
+  return (
+    <View style={{ flex: 1 }}>
+      <View style={styles.sortRow}>
+        {(['mine', 'friends'] as const).map(f => (
+          <Pressable key={f} style={[styles.sortChip, filter === f && styles.sortChipActive]} onPress={() => setFilter(f)}>
+            <Text style={[styles.sortChipText, filter === f && styles.sortChipTextActive]}>
+              {f === 'mine' ? 'My Activity' : 'Friends'}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+
+      {filter === 'mine' && (
+        recent.length === 0 ? (
+          <View style={styles.emptyCenter}>
+            <Text style={styles.emptyTitle}>No activity yet</Text>
+            <Pressable style={styles.logCtaInline} onPress={openLogFlow}>
+              <Text style={styles.logCtaText}>+ Log a new spot</Text>
+            </Pressable>
+            <Text style={styles.emptySubCta}>to get started!</Text>
+          </View>
+        ) : (
+          <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false} contentContainerStyle={styles.listContent}>
+            {recent.map(v => <ActivitySpotRow key={v.id} visit={v} />)}
+          </ScrollView>
+        )
+      )}
+
+      {filter === 'friends' && (
+        <View style={{ flex: 1 }}>
+          <View style={styles.searchWrap}>
+            <Ionicons name="search" size={16} color={T.muted} style={{ marginRight: 8 }} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search by username or phone"
+              placeholderTextColor={T.muted}
+              value={query}
+              onChangeText={setQuery}
+              autoCapitalize="none"
+            />
+          </View>
+          <View style={styles.emptyCenter}>
+            <Text style={styles.emptyTitle}>No friends yet</Text>
+            <Text style={styles.emptyBody}>Search above or share your link to connect</Text>
+            <Pressable style={styles.logCtaInline} onPress={() => Share.share({ message: 'Join me on DateSpot!' }).catch(() => {})}>
+              <Text style={styles.logCtaText}>Share invite link</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
 
-function SpotRow({ visit }: { visit: Visit }) {
+function ActivitySpotRow({ visit }: { visit: Visit }) {
+  const info = ACTIVITY_TYPES.find(a => a.value === visit.activity_type);
+  const dateStr = friendlyDate(visit.visited_at || visit.created_at);
+  return (
+    <Pressable
+      style={({ pressed }) => [styles.row, pressed && { opacity: 0.7 }]}
+      onPress={() => router.push(`/spot/${visit.id}`)}
+    >
+      <View style={styles.rowBody}>
+        <View style={styles.rowTop}>
+          <Text style={styles.rowName} numberOfLines={1}>{visit.venue_name}</Text>
+          <Text style={styles.rowDate}>{dateStr}</Text>
+        </View>
+        <Text style={styles.rowMeta}>{info?.label}</Text>
+      </View>
+    </Pressable>
+  );
+}
+
+function SpotRow({ visit, hideRating }: { visit: Visit; hideRating?: boolean }) {
   const info = ACTIVITY_TYPES.find(a => a.value === visit.activity_type);
   const color = ratingColor(visit.rating);
   const dateStr = friendlyDate(visit.visited_at || visit.created_at);
@@ -269,9 +343,11 @@ function SpotRow({ visit }: { visit: Visit }) {
       <View style={styles.rowBody}>
         <View style={styles.rowTop}>
           <Text style={styles.rowName} numberOfLines={1}>{visit.venue_name}</Text>
-          <View style={[styles.ratingPill, { backgroundColor: color + '2E' }]}>
-            <Text style={[styles.ratingPillText, { color }]}>{formatRating(visit.rating)}</Text>
-          </View>
+          {!hideRating && (
+            <View style={[styles.ratingPill, { borderColor: color }]}>
+              <Text style={[styles.ratingPillText, { color }]}>{formatRating(visit.rating)}</Text>
+            </View>
+          )}
         </View>
         <Text style={styles.rowMeta}>
           {info?.label} · {PRICE_LABELS[visit.price as Price]} · {dateStr}
@@ -290,7 +366,7 @@ const styles = StyleSheet.create({
   listContent: { paddingBottom: 40 },
 
   slideContainer: { flex: 1, overflow: 'hidden' },
-  slidePanels: { flexDirection: 'row', width: SCREEN_W * 3, flex: 1 },
+  slidePanels: { flexDirection: 'row', width: SCREEN_W * 4, flex: 1 },
   slidePanel: { width: SCREEN_W, flex: 1 },
 
   header: {
@@ -317,13 +393,13 @@ const styles = StyleSheet.create({
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1, shadowRadius: 3, elevation: 2,
   },
-  segBtnText: { fontSize: 13, fontWeight: '500', color: T.muted },
+  segBtnText: { fontSize: 11, fontWeight: '500', color: T.muted },
   segBtnTextActive: { color: T.primary, fontWeight: '600' },
 
   sortRow: {
     flexDirection: 'row', gap: 8, paddingHorizontal: 16, marginBottom: 12,
   },
-  sortRowHidden: { opacity: 0 },
+  sortRowHidden: { opacity: 0, height: 0, marginBottom: 0, overflow: 'hidden' },
   sortChip: {
     flex: 1, paddingVertical: 6, borderRadius: 20, alignItems: 'center',
     backgroundColor: T.bg, borderWidth: 1, borderColor: T.border,
@@ -356,7 +432,7 @@ const styles = StyleSheet.create({
   },
   futureTagText: { fontSize: 11, fontWeight: '600', color: '#5856d6' },
 
-  ratingPill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+  ratingPill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, borderWidth: 1.5, backgroundColor: 'transparent' },
   ratingPillText: { fontSize: 12, fontWeight: '800' },
 
   categorySection: { marginBottom: 28 },
@@ -407,4 +483,24 @@ const styles = StyleSheet.create({
   },
   emptyBody: { fontSize: 15, color: T.muted, textAlign: 'center', lineHeight: 22 },
   emptySubCta: { fontSize: 15, color: T.muted, marginTop: 10 },
+
+  activityFilterRow: {
+    flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingVertical: 10,
+  },
+  activityFilterChip: {
+    paddingHorizontal: 16, paddingVertical: 7, borderRadius: 20,
+    backgroundColor: T.bg, borderWidth: 1, borderColor: T.border,
+  },
+  activityFilterChipActive: { backgroundColor: T.primary, borderColor: T.primary },
+  activityFilterText: { fontSize: 13, fontWeight: '600', color: T.muted },
+  activityFilterTextActive: { color: '#fff' },
+
+  searchWrap: {
+    flexDirection: 'row', alignItems: 'center',
+    marginHorizontal: 16, marginBottom: 4,
+    backgroundColor: T.card, borderRadius: 12,
+    paddingHorizontal: 12, paddingVertical: 10,
+    borderWidth: 1, borderColor: T.border,
+  },
+  searchInput: { flex: 1, fontSize: 14, color: T.primary },
 });
