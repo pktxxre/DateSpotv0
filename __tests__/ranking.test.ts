@@ -14,6 +14,7 @@ function makeVisit(id: string, rankOrder: number, triage: 'bad' | 'okay' | 'grea
     activity_type: 'food',
     price: 2,
     triage,
+    date_type: null,
     created_at: '2026-01-01',
     photos: [],
   };

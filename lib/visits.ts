@@ -3,7 +3,7 @@ import { getDb } from './db';
 export type Rating = number;
 export type Price = 0 | 1 | 2 | 3; // Free $ $$ $$$
 export type Triage = 'bad' | 'okay' | 'great';
-export type DateType = 'first' | 'casual' | 'special' | 'friend' | 'solo';
+export type DateType = 'first' | 'casual' | 'special' | 'friend' | 'solo' | 'so' | 'secret';
 export type ActivityType =
   | 'food'
   | 'drinks'
@@ -29,6 +29,8 @@ export const DATE_TYPES: { value: DateType; label: string }[] = [
   { value: 'special', label: 'Special Occasion' },
   { value: 'friend',  label: 'Friend Date' },
   { value: 'solo',    label: 'Solo Date' },
+  { value: 'so',      label: 'With S/O' },
+  { value: 'secret',  label: 'Secret' },
 ];
 
 export interface Visit {

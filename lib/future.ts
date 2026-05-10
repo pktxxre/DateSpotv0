@@ -25,3 +25,11 @@ export function insertFutureSpot(spot: FutureSpot): void {
 export function deleteFutureSpot(id: string): void {
   getDb().runSync('DELETE FROM future_spots WHERE id = ?', [id]);
 }
+
+export function updateFutureSpot(id: string, venue_name: string): void {
+  getDb().runSync('UPDATE future_spots SET venue_name = ? WHERE id = ?', [venue_name, id]);
+}
+
+export function getFutureSpotById(id: string): FutureSpot | null {
+  return getDb().getFirstSync<FutureSpot>('SELECT * FROM future_spots WHERE id = ?', [id]) ?? null;
+}

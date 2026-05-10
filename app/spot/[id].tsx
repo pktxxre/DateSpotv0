@@ -98,7 +98,7 @@ export default function SpotDetailScreen() {
 
           {/* Rating — smaller, secondary */}
           <View style={styles.ratingRow}>
-            <View style={[styles.ratingBadge, { backgroundColor: color + '2E' }]}>
+            <View style={[styles.ratingBadge, { borderColor: color }]}>
               <Text style={[styles.ratingScore, { color }]}>{formatRating(visit.rating)}</Text>
               <Text style={[styles.ratingSlash, { color: color + 'AA' }]}>/10</Text>
             </View>
@@ -338,7 +338,8 @@ const styles = StyleSheet.create({
   ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   ratingBadge: {
     flexDirection: 'row', alignItems: 'baseline', gap: 2,
-    paddingHorizontal: 11, paddingVertical: 5, borderRadius: 10,
+    paddingHorizontal: 13, paddingVertical: 6, borderRadius: 999,
+    borderWidth: 1.5, backgroundColor: 'transparent',
   },
   ratingScore: { fontSize: 18, fontWeight: '800' },
   ratingSlash: { fontSize: 11, fontWeight: '600' },

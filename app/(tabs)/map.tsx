@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   StyleSheet, View, Text, Pressable, TextInput, Alert, ScrollView, Image, LayoutAnimation,
+  Modal, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import MapView, { Marker, Region, MapPressEvent } from 'react-native-maps';
 import BottomSheet, { BottomSheetView } from '@gorhom/bottom-sheet';
@@ -63,6 +64,7 @@ export default function MapScreen() {
   const [currentTriage, setCurrentTriage] = useState<Triage>('okay');
   const sheetRef = useRef<BottomSheet>(null);
   const mapRef = useRef<MapView>(null);
+  const toModalRef = useRef(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -187,8 +189,9 @@ export default function MapScreen() {
     }
     const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
     setDraft((d) => ({ ...d, lat: loc.coords.latitude, lng: loc.coords.longitude }));
+    toModalRef.current = true;
     setStep('details');
-    sheetRef.current?.snapToIndex(2);
+    sheetRef.current?.close();
   }
 
   function handleDropPin() {
@@ -209,8 +212,9 @@ export default function MapScreen() {
       setStep('future-name');
       sheetRef.current?.snapToIndex(1);
     } else {
+      toModalRef.current = true;
       setStep('details');
-      sheetRef.current?.snapToIndex(2);
+      sheetRef.current?.close();
     }
   }
 
@@ -234,13 +238,7 @@ export default function MapScreen() {
         }
       }
     }
-    const existing = getAllVisits();
-    if (existing.length === 0) {
-      saveVisit(1000);
-      return;
-    }
     setStep('triage');
-    sheetRef.current?.snapToIndex(1);
   }
 
   function handleTriage(triage: Triage) {
@@ -248,12 +246,7 @@ export default function MapScreen() {
     const existing = getAllVisits();
     const initial = startComparison(existing, triage);
     setCmpState(initial);
-    if (initial === null) {
-      saveVisitWithTriage(1000, triage);
-      return;
-    }
-    setStep('compare');
-    sheetRef.current?.snapToIndex(1);
+    setStep('compare'); // always go to step 4; NoCompareStep handles the null case
   }
 
   function handleCompare(result: 'better' | 'worse') {
@@ -294,7 +287,6 @@ export default function MapScreen() {
     });
     setVisits(getAllVisits());
     setStep('done');
-    sheetRef.current?.snapToIndex(1);
   }
 
   function saveVisit(rank_order: number) {
@@ -306,7 +298,7 @@ export default function MapScreen() {
     setSelectedVisit((prev) => (prev?.id === visit.id ? null : visit));
   }
 
-  const snapPoints = ['30%', '68%', '95%'];
+  const snapPoints = ['12%', '68%', '95%'];
 
   return (
     <View style={styles.container}>
@@ -414,9 +406,12 @@ export default function MapScreen() {
         index={-1}
         snapPoints={snapPoints}
         enablePanDownToClose
-        onClose={resetFlow}
+        onClose={() => {
+          if (toModalRef.current) { toModalRef.current = false; return; }
+          resetFlow();
+        }}
         backgroundStyle={styles.sheetBg}
-        handleIndicatorStyle={styles.handle}
+        handleIndicatorStyle={{ backgroundColor: 'transparent' }}
       >
         <BottomSheetView style={styles.sheetContent}>
           {step === 'location' && (
@@ -441,36 +436,60 @@ export default function MapScreen() {
               onBack={() => { setStep('future-pin'); sheetRef.current?.snapToIndex(1); }}
             />
           )}
-          {step === 'details' && (
-            <DetailsStep
-              draft={draft}
-              onChange={(key, val) => setDraft((d) => ({ ...d, [key]: val }))}
-              onNext={handleDetailsDone}
-              onBack={() => sheetRef.current?.close()}
-            />
-          )}
-          {step === 'triage' && (
-            <TriageStep onPick={handleTriage} />
-          )}
-          {step === 'compare' && cmpState && (
-            <CompareStep
-              newVenueName={draft.venue_name || ''}
-              opponent={currentComparison(cmpState)}
-              onBetter={() => handleCompare('better')}
-              onWorse={() => handleCompare('worse')}
-              onTooHard={handleTooHard}
-              onBack={() => { setStep('triage'); sheetRef.current?.snapToIndex(1); }}
-            />
-          )}
-          {step === 'done' && (
-            <DoneStep
-              venueName={draft.venue_name || ''}
-              onAnother={() => { resetFlow(); openLog(); }}
-              onClose={() => sheetRef.current?.close()}
-            />
-          )}
         </BottomSheetView>
       </BottomSheet>
+
+      {/* Modal overlay for steps 2-5 */}
+      <Modal
+        visible={['details', 'triage', 'compare', 'done'].includes(step ?? '')}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+      >
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+          <View style={styles.modalOverlay}>
+            {step === 'details' ? (
+              <View style={styles.modalCard}>
+                <DetailsStep
+                  draft={draft}
+                  onChange={(key, val) => setDraft((d) => ({ ...d, [key]: val }))}
+                  onNext={handleDetailsDone}
+                  onBack={resetFlow}
+                />
+              </View>
+            ) : (
+              <View style={styles.modalCardCompact}>
+                {step === 'triage' && (
+                  <TriageStep onPick={handleTriage} />
+                )}
+                {step === 'compare' && !cmpState && (
+                  <NoCompareStep
+                    triage={currentTriage}
+                    onSave={() => saveVisitWithTriage(1000, currentTriage)}
+                  />
+                )}
+                {step === 'compare' && cmpState && (
+                  <CompareStep
+                    newVenueName={draft.venue_name || ''}
+                    opponent={currentComparison(cmpState)}
+                    onBetter={() => handleCompare('better')}
+                    onWorse={() => handleCompare('worse')}
+                    onTooHard={handleTooHard}
+                    onBack={() => setStep('triage')}
+                  />
+                )}
+                {step === 'done' && (
+                  <DoneStep
+                    venueName={draft.venue_name || ''}
+                    onAnother={() => { resetFlow(); openLog(); }}
+                    onClose={resetFlow}
+                  />
+                )}
+              </View>
+            )}
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
@@ -501,11 +520,29 @@ function VisitDetail({ visit, onClose }: { visit: Visit; onClose: () => void }) 
   );
 }
 
+function ProgressDots({ currentStep }: { currentStep: number }) {
+  return (
+    <View style={styles.dotsRow}>
+      {[1, 2, 3, 4, 5].map(i => (
+        <View
+          key={i}
+          style={[
+            styles.dot,
+            i === currentStep && styles.dotActive,
+            i < currentStep && styles.dotDone,
+          ]}
+        />
+      ))}
+    </View>
+  );
+}
+
 function LocationStep({ onUseLocation, onDropPin, onFutureDate }: {
   onUseLocation: () => void; onDropPin: () => void; onFutureDate: () => void;
 }) {
   return (
     <View style={styles.stepContainer}>
+      <ProgressDots currentStep={1} />
       <Text style={styles.stepTitle}>Where did you go?</Text>
       <Text style={styles.stepSubtitle}>Step 1 of 5</Text>
       <View style={styles.circleRow}>
@@ -804,13 +841,14 @@ function DetailsStep({ draft, onChange, onNext, onBack }: {
   }
 
   return (
-    <ScrollView style={styles.stepContainer} keyboardShouldPersistTaps="handled">
+    <ScrollView style={styles.detailsScroll} contentContainerStyle={styles.stepContainer} keyboardShouldPersistTaps="handled">
+      <ProgressDots currentStep={2} />
       <Text style={styles.stepTitle}>Tell me about it</Text>
       <Text style={styles.stepSubtitle}>Step 2 of 5</Text>
 
       <TextInput
         style={styles.input}
-        placeholder="Venue name, e.g. Tartine Bakery"
+        placeholder="Name your date!"
         placeholderTextColor="#c7c7cc"
         value={draft.venue_name || ''}
         onChangeText={(v) => onChange('venue_name', v)}
@@ -849,20 +887,20 @@ function DetailsStep({ draft, onChange, onNext, onBack }: {
       </ScrollView>
 
       <Text style={styles.sectionLabel}>What kind of spot?</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll} contentContainerStyle={{ paddingHorizontal: 24 }}>
+      <View style={styles.chipWrap}>
         {ACTIVITY_TYPES.map((a) => {
           const selected = draft.activity_type === a.value;
           return (
             <Pressable
               key={a.value}
               style={[styles.chip, selected && styles.chipSelected]}
-              onPress={() => onChange('activity_type', a.value)}
+              onPress={() => onChange('activity_type', selected ? null : a.value)}
             >
               <Text style={[styles.chipLabel, selected && styles.chipLabelSelected]}>{a.label}</Text>
             </Pressable>
           );
         })}
-      </ScrollView>
+      </View>
 
       <Text style={styles.sectionLabel}>Price range</Text>
       <View style={styles.priceRow}>
@@ -872,7 +910,7 @@ function DetailsStep({ draft, onChange, onNext, onBack }: {
             <Pressable
               key={p}
               style={[styles.priceBtn, selected && styles.priceBtnSelected]}
-              onPress={() => onChange('price', p)}
+              onPress={() => onChange('price', selected ? undefined : p)}
             >
               <Text style={[styles.priceBtnText, selected && styles.priceBtnTextSelected]}>
                 {PRICE_LABELS[p]}
@@ -883,20 +921,20 @@ function DetailsStep({ draft, onChange, onNext, onBack }: {
       </View>
 
       <Text style={styles.sectionLabel}>What kind of date?</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll} contentContainerStyle={{ paddingHorizontal: 24 }}>
+      <View style={styles.chipWrap}>
         {DATE_TYPES.map((d) => {
           const selected = draft.date_type === d.value;
           return (
             <Pressable
               key={d.value}
               style={[styles.chip, selected && styles.chipSelected]}
-              onPress={() => onChange('date_type', d.value)}
+              onPress={() => onChange('date_type', selected ? null : d.value)}
             >
               <Text style={[styles.chipLabel, selected && styles.chipLabelSelected]}>{d.label}</Text>
             </Pressable>
           );
         })}
-      </ScrollView>
+      </View>
 
       <TextInput
         style={[styles.input, styles.inputMultiline]}
@@ -924,6 +962,7 @@ function DetailsStep({ draft, onChange, onNext, onBack }: {
 function TriageStep({ onPick }: { onPick: (t: Triage) => void }) {
   return (
     <View style={styles.stepContainer}>
+      <ProgressDots currentStep={3} />
       <Text style={styles.stepTitle}>First impression?</Text>
       <Text style={styles.stepSubtitle}>Step 3 of 5 · Narrows your comparisons</Text>
       <View style={styles.triageRow}>
@@ -941,12 +980,29 @@ function TriageStep({ onPick }: { onPick: (t: Triage) => void }) {
   );
 }
 
+function NoCompareStep({ triage, onSave }: { triage: Triage; onSave: () => void }) {
+  const tierLabel = triage === 'great' ? 'great' : triage === 'okay' ? 'okay' : 'bad';
+  return (
+    <View style={styles.stepContainer}>
+      <ProgressDots currentStep={4} />
+      <Text style={styles.stepTitle}>First of its kind</Text>
+      <Text style={styles.stepSubtitle}>
+        You don't have other {tierLabel} spots to compare yet. Once you log more, they'll rank against each other here.
+      </Text>
+      <Pressable style={styles.btnPrimaryCenter} onPress={onSave}>
+        <Text style={styles.btnPrimaryText}>Save spot</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 function CompareStep({ newVenueName, opponent, onBetter, onWorse, onTooHard, onBack }: {
   newVenueName: string; opponent: Visit;
   onBetter: () => void; onWorse: () => void; onTooHard: () => void; onBack: () => void;
 }) {
   return (
     <View style={styles.stepContainer}>
+      <ProgressDots currentStep={4} />
       <Text style={styles.stepTitle}>Which was better?</Text>
       <Text style={styles.stepSubtitle}>Step 4 of 5</Text>
       <View style={styles.compareRow}>
@@ -978,6 +1034,7 @@ function DoneStep({ venueName, onAnother, onClose }: {
 }) {
   return (
     <View style={[styles.stepContainer, styles.doneContainer]}>
+      <ProgressDots currentStep={5} />
       <Text style={styles.doneEmoji}>📍</Text>
       <Text style={styles.doneTitle}>Logged!</Text>
       <Text style={styles.doneSub}>{venueName} is on your map.</Text>
@@ -1008,7 +1065,7 @@ const styles = StyleSheet.create({
   pinScore: { fontSize: 12, fontWeight: '800' },
 
   futurePinBadge: {
-    width: 30, height: 30, borderRadius: 15,
+    width: 38, height: 38, borderRadius: 19,
     backgroundColor: '#5856d6',
     alignItems: 'center', justifyContent: 'center',
     shadowColor: '#5856d6', shadowOffset: { width: 0, height: 2 },
@@ -1084,11 +1141,40 @@ const styles = StyleSheet.create({
   },
 
   sheetBg: { backgroundColor: T.bg, borderRadius: 20 },
-  handle: { backgroundColor: T.border },
   sheetContent: { flex: 1 },
-  stepContainer: { paddingHorizontal: 24, paddingTop: 4 },
-  stepTitle: { fontSize: 20, fontWeight: '700', color: T.primary, textAlign: 'center' },
-  stepSubtitle: { fontSize: 13, color: T.muted, textAlign: 'center', marginTop: 4, marginBottom: 20 },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+  },
+  modalCard: {
+    backgroundColor: T.bg,
+    borderRadius: 24,
+    height: '84%',
+    overflow: 'hidden',
+    opacity: 0.9,
+  },
+  modalCardCompact: {
+    backgroundColor: T.bg,
+    borderRadius: 24,
+    overflow: 'hidden',
+    paddingVertical: 32,
+    minHeight: 360,
+    justifyContent: 'center',
+    opacity: 0.9,
+  },
+
+  dotsRow: { flexDirection: 'row', justifyContent: 'center', gap: 6, marginBottom: 20 },
+  dot: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: T.border },
+  dotActive: { width: 18, borderRadius: 3, backgroundColor: T.accent },
+  dotDone: { backgroundColor: '#c9b89e' },
+
+  detailsScroll: { flex: 1 },
+  stepContainer: { paddingHorizontal: 24, paddingTop: 16 },
+  stepTitle: { fontSize: 20, fontWeight: '700', color: T.primary, textAlign: 'center', fontFamily: 'Georgia' },
+  stepSubtitle: { fontSize: 13, color: T.muted, textAlign: 'center', marginTop: 8, marginBottom: 28 },
 
   circleRow: { flexDirection: 'row', justifyContent: 'space-between' },
   circleBtn: { alignItems: 'center', flex: 1 },
@@ -1096,51 +1182,50 @@ const styles = StyleSheet.create({
   circleBtnLabel: { fontSize: 13, fontWeight: '600', color: T.primary, textAlign: 'center' },
   circleBtnSub: { fontSize: 11, color: T.muted, textAlign: 'center', marginTop: 2 },
 
-  sectionLabel: { fontSize: 13, fontWeight: '600', color: T.muted, marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 },
-  photoScroll: { marginBottom: 16, marginHorizontal: -24 },
+  sectionLabel: { fontSize: 12, fontWeight: '600', color: T.muted, marginBottom: 7, textTransform: 'uppercase', letterSpacing: 0.5 },
+  photoScroll: { marginBottom: 12, marginHorizontal: -24 },
   photoScrollContent: { paddingHorizontal: 24, alignItems: 'center' },
   photoThumb: {
-    width: 80, height: 80, borderRadius: 10, overflow: 'hidden',
-    marginRight: 8,
+    width: 64, height: 64, borderRadius: 9, overflow: 'hidden',
+    marginRight: 7,
   },
   photoThumbImg: { width: '100%', height: '100%' },
   photoAdd: {
-    width: 80, height: 80, borderRadius: 10,
+    width: 64, height: 64, borderRadius: 9,
     borderWidth: 1.5, borderColor: T.border,
     backgroundColor: T.card,
-    alignItems: 'center', justifyContent: 'center', gap: 4,
-    marginRight: 8,
+    alignItems: 'center', justifyContent: 'center', gap: 3,
+    marginRight: 7,
   },
-  photoAddLabel: { fontSize: 11, color: T.muted, fontWeight: '500' },
+  photoAddLabel: { fontSize: 10, color: T.muted, fontWeight: '500' },
 
-  chipScroll: { marginBottom: 16, marginHorizontal: -24 },
+  chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
   chip: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
+    flexDirection: 'row', alignItems: 'center', gap: 5,
     backgroundColor: T.card, borderRadius: 20,
-    paddingHorizontal: 14, paddingVertical: 9, marginRight: 8,
+    paddingHorizontal: 12, paddingVertical: 6,
     borderWidth: 1.5, borderColor: T.border,
   },
   chipSelected: { backgroundColor: T.accentTint, borderColor: T.accent },
-  chipEmoji: { fontSize: 15 },
-  chipLabel: { fontSize: 14, fontWeight: '500', color: T.primary },
-  chipLabelSelected: { color: T.accent, fontWeight: '700' },
+  chipLabel: { fontSize: 13, fontWeight: '600', color: T.primary },
+  chipLabelSelected: { color: T.accent },
 
-  priceRow: { flexDirection: 'row', gap: 10, marginBottom: 16 },
+  priceRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
   priceBtn: {
-    flex: 1, backgroundColor: T.inputBg, borderRadius: 12,
-    paddingVertical: 12, alignItems: 'center',
+    flex: 1, backgroundColor: T.inputBg, borderRadius: 10,
+    paddingVertical: 9, alignItems: 'center',
     borderWidth: 1.5, borderColor: 'transparent',
   },
   priceBtnSelected: { backgroundColor: T.accentTint, borderColor: T.accent },
-  priceBtnText: { fontSize: 16, fontWeight: '600', color: T.primary },
+  priceBtnText: { fontSize: 14, fontWeight: '600', color: T.primary },
   priceBtnTextSelected: { color: T.accent },
 
   input: {
     backgroundColor: T.inputBg, borderRadius: 12,
-    paddingHorizontal: 16, paddingVertical: 14,
-    fontSize: 15, color: T.primary, marginBottom: 12,
+    paddingHorizontal: 14, paddingVertical: 10,
+    fontSize: 15, color: T.primary, marginBottom: 10,
   },
-  inputMultiline: { minHeight: 80, textAlignVertical: 'top' },
+  inputMultiline: { minHeight: 64, textAlignVertical: 'top' },
 
   triageRow: { flexDirection: 'row', gap: 12 },
   triageBtn: {
@@ -1204,6 +1289,7 @@ const styles = StyleSheet.create({
 
   btnRow: { flexDirection: 'row', gap: 12, marginTop: 8 },
   btnPrimary: { flex: 1, backgroundColor: 'transparent', borderRadius: 14, paddingVertical: 16, alignItems: 'center', borderWidth: 1.5, borderColor: T.accent },
+  btnPrimaryCenter: { backgroundColor: 'transparent', borderRadius: 14, paddingVertical: 16, alignItems: 'center', borderWidth: 1.5, borderColor: T.accent, marginTop: 8 },
   btnPrimaryText: { color: T.accent, fontSize: 16, fontWeight: '700' },
   btnSecondary: { flex: 1, backgroundColor: T.inputBg, borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
   btnSecondaryCenter: { backgroundColor: T.inputBg, borderRadius: 14, paddingVertical: 14, alignItems: 'center', marginTop: 8 },

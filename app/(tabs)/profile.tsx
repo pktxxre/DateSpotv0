@@ -90,7 +90,10 @@ export default function ProfileScreen() {
         <View style={styles.statsRow}>
           <StatBox value={visits.length} label="Logs" />
           <View style={styles.statDivider} />
-          <StatBox value={0} label="Friends" />
+          <Pressable style={styles.statBox} onPress={() => router.push('/friends' as any)}>
+            <Text style={styles.statValue}>0</Text>
+            <Text style={styles.statLabel}>Friends</Text>
+          </Pressable>
           <View style={styles.statDivider} />
           <StatBox value={0} label="Following" />
         </View>
@@ -188,15 +191,13 @@ const styles = StyleSheet.create({
 
   statsRow: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: T.card, marginHorizontal: 20, borderRadius: 16,
-    paddingVertical: 16, marginBottom: 16,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06, shadowRadius: 8, elevation: 2,
+    backgroundColor: 'transparent', marginHorizontal: 60,
+    paddingVertical: 10, marginBottom: 16,
   },
   statBox: { flex: 1, alignItems: 'center' },
-  statValue: { fontSize: 22, fontWeight: '700', color: T.primary, marginBottom: 2 },
-  statLabel: { fontSize: 12, fontWeight: '600', color: T.muted, letterSpacing: 0.4 },
-  statDivider: { width: 1, height: 32, backgroundColor: T.border },
+  statValue: { fontSize: 16, fontWeight: '700', color: T.primary, marginBottom: 2 },
+  statLabel: { fontSize: 10, fontWeight: '600', color: T.muted, letterSpacing: 0.4 },
+  statDivider: { width: 1, height: 32, backgroundColor: T.primary },
 
   actionRow: {
     flexDirection: 'row', gap: 10, paddingHorizontal: 20, marginBottom: 28,
