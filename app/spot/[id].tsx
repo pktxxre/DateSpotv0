@@ -1,17 +1,21 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, Pressable, Modal, Image,
-  Alert, ScrollView, Dimensions, TextInput, Share, NativeModules,
+  Alert, ScrollView, Dimensions, TextInput, Share, NativeModules, LayoutAnimation,
 } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 import { useLocalSearchParams, router, useFocusEffect, Stack } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import {
-  getVisitById, deleteVisit, updateVisit, Visit,
-  ACTIVITY_TYPES, PRICE_LABELS, Price, ActivityType,
+  getVisitById, deleteVisit, updateVisit, getAllVisits, updateRankOrder, recomputeRatings, Visit,
+  ACTIVITY_TYPES, PRICE_LABELS, DATE_TYPES, Price, ActivityType, DateType,
   ratingColor, formatRating, friendlyDate,
 } from '@/lib/visits';
+import {
+  startComparison, advance, resolveRankOrder, resolveAtMid,
+  currentComparison, ComparisonState,
+} from '@/lib/ranking';
 import { uploadPhoto } from '@/lib/storage';
 import { T } from '@/lib/theme';
 
@@ -21,12 +25,217 @@ const PHOTO_COLS = 3;
 const PHOTO_GAP = 4;
 const PHOTO_SIZE = (SCREEN_W - H_PAD * 2 - PHOTO_GAP * (PHOTO_COLS - 1)) / PHOTO_COLS;
 
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const DAYS = Array.from({ length: 31 }, (_, i) => String(i + 1));
+const _NOW = new Date();
+const YEARS = Array.from({ length: 11 }, (_, i) => String(_NOW.getFullYear() - i));
+const DATE_OPTION_H = 46;
+const DATE_DROPDOWN_H = DATE_OPTION_H * 2.5;
+type DateField = 'month' | 'day' | 'year';
+
+function initDateState(dateStr?: string): { month: string; day: string; year: string } {
+  if (dateStr) {
+    const m = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return {
+      month: MONTHS[parseInt(m[2]) - 1] ?? MONTHS[_NOW.getMonth()],
+      day: String(parseInt(m[3])),
+      year: m[1],
+    };
+  }
+  return { month: MONTHS[_NOW.getMonth()], day: String(_NOW.getDate()), year: String(_NOW.getFullYear()) };
+}
+
+function RankAgainModal({ visit, onClose, onDone }: {
+  visit: Visit; onClose: () => void; onDone: (updated: Visit) => void;
+}) {
+  const others = getAllVisits().filter(v => v.id !== visit.id && v.triage === visit.triage);
+  const [cmpState, setCmpState] = useState<ComparisonState | null>(() => startComparison(others, visit.triage));
+
+  function handleResult(result: 'better' | 'worse') {
+    const prev = cmpState!;
+    const next = advance(prev, result);
+    if (next) {
+      setCmpState(next);
+    } else {
+      const finalLo = result === 'better' ? prev.lo : prev.mid + 1;
+      saveRank(resolveRankOrder({ ...prev, lo: finalLo }, others));
+    }
+  }
+
+  function handleTooHard() { saveRank(resolveAtMid(cmpState!, others)); }
+
+  function saveRank(rank_order: number) {
+    updateRankOrder(visit.id, rank_order);
+    recomputeRatings();
+    const updated = getVisitById(visit.id);
+    if (updated) onDone(updated);
+  }
+
+  const opponent = cmpState ? currentComparison(cmpState) : null;
+  const oppColor = opponent ? ratingColor(opponent.rating) : T.muted;
+
+  const cardContent = others.length === 0 ? (
+    <>
+      <Text style={r.title}>Nothing to compare</Text>
+      <Text style={r.subtitle}>Log more {visit.triage} spots to start ranking.</Text>
+      <Pressable style={r.secBtn} onPress={onClose}><Text style={r.secBtnText}>Got it</Text></Pressable>
+    </>
+  ) : opponent ? (
+    <>
+      <Text style={r.title}>Which was better?</Text>
+      <Text style={r.subtitle}>Tap to rank</Text>
+      <View style={r.compareRow}>
+        <Pressable style={[r.card, r.cardThis]} onPress={() => handleResult('better')}>
+          <Text style={r.cardName} numberOfLines={3}>{visit.venue_name}</Text>
+          <Text style={r.cardLabel}>This one</Text>
+        </Pressable>
+        <View style={r.vs}><Text style={r.vsText}>vs</Text></View>
+        <Pressable style={[r.card, r.cardThat]} onPress={() => handleResult('worse')}>
+          <View style={[r.scorePill, { backgroundColor: oppColor + '2E' }]}>
+            <Text style={[r.scoreText, { color: oppColor }]}>{formatRating(opponent.rating)}</Text>
+          </View>
+          <Text style={r.cardName} numberOfLines={3}>{opponent.venue_name}</Text>
+          <Text style={r.cardLabel}>That one</Text>
+        </Pressable>
+      </View>
+      <Pressable style={r.tooHardBtn} onPress={handleTooHard}>
+        <Text style={r.tooHardText}>Too hard to compare</Text>
+      </Pressable>
+      <Pressable style={r.secBtn} onPress={onClose}><Text style={r.secBtnText}>Cancel</Text></Pressable>
+    </>
+  ) : null;
+
+  return (
+    <Modal visible animationType="fade" transparent statusBarTranslucent>
+      <Pressable style={r.overlay} onPress={onClose}>
+        <Pressable style={r.floatingCard} onPress={() => {}}>
+          {cardContent}
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+const r = StyleSheet.create({
+  overlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'center', paddingHorizontal: 16,
+  },
+  floatingCard: {
+    backgroundColor: T.bg, borderRadius: 24,
+    paddingHorizontal: 20, paddingVertical: 28,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2, shadowRadius: 20,
+  },
+  title: { fontSize: 20, fontWeight: '700', color: T.primary, fontFamily: 'Georgia', textAlign: 'center', marginBottom: 4 },
+  subtitle: { fontSize: 13, color: T.muted, textAlign: 'center', marginBottom: 20 },
+  compareRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
+  card: { flex: 1, borderRadius: 16, padding: 14, alignItems: 'center', gap: 8, minHeight: 110, justifyContent: 'center' },
+  cardThis: { backgroundColor: T.accentTint, borderWidth: 2, borderColor: T.accent },
+  cardThat: { backgroundColor: T.inputBg, borderWidth: 2, borderColor: T.border },
+  scorePill: { borderRadius: 20, paddingHorizontal: 10, paddingVertical: 3 },
+  scoreText: { fontSize: 13, fontWeight: '800' },
+  cardName: { fontSize: 13, fontWeight: '700', color: T.primary, textAlign: 'center', lineHeight: 17 },
+  cardLabel: { fontSize: 11, color: T.muted, fontWeight: '500' },
+  vs: { width: 30, height: 30, borderRadius: 15, backgroundColor: T.inputBg, alignItems: 'center', justifyContent: 'center' },
+  vsText: { fontSize: 11, fontWeight: '700', color: T.muted },
+  tooHardBtn: { backgroundColor: T.inputBg, borderRadius: 14, paddingVertical: 13, alignItems: 'center', marginBottom: 8 },
+  tooHardText: { fontSize: 14, fontWeight: '600', color: T.muted },
+  secBtn: { backgroundColor: 'transparent', borderRadius: 14, paddingVertical: 12, alignItems: 'center' },
+  secBtnText: { fontSize: 14, fontWeight: '500', color: T.muted },
+});
+
+function EditDatePicker({ month, day, year, onMonthChange, onDayChange, onYearChange }: {
+  month: string; day: string; year: string;
+  onMonthChange: (v: string) => void;
+  onDayChange: (v: string) => void;
+  onYearChange: (v: string) => void;
+}) {
+  const [open, setOpen] = useState<DateField | null>(null);
+  const [tabRowH, setTabRowH] = useState(68);
+  const [tabLayouts, setTabLayouts] = useState<Partial<Record<DateField, { x: number; width: number }>>>({});
+  const listRef = useRef<ScrollView>(null);
+
+  function toggle(field: DateField) {
+    LayoutAnimation.configureNext({ duration: 220, update: { type: 'easeInEaseOut' }, create: { type: 'easeInEaseOut', property: 'opacity' }, delete: { type: 'easeInEaseOut', property: 'opacity' } });
+    setOpen(prev => prev === field ? null : field);
+  }
+
+  useEffect(() => {
+    if (!open) return;
+    const items = open === 'month' ? MONTHS : open === 'day' ? DAYS : YEARS;
+    const val = open === 'month' ? month : open === 'day' ? day : year;
+    const idx = items.indexOf(val);
+    if (idx >= 0) setTimeout(() => listRef.current?.scrollTo({ y: idx * DATE_OPTION_H, animated: false }), 40);
+  }, [open]);
+
+  function pick(field: DateField, val: string) {
+    if (field === 'month') onMonthChange(val);
+    else if (field === 'day') onDayChange(val);
+    else onYearChange(val);
+    LayoutAnimation.configureNext({ duration: 180, update: { type: 'easeInEaseOut' }, delete: { type: 'easeInEaseOut', property: 'opacity' } });
+    setOpen(null);
+  }
+
+  const fields: { key: DateField; label: string; value: string; flex?: number }[] = [
+    { key: 'month', label: 'Month', value: month, flex: 1.3 },
+    { key: 'day',   label: 'Day',   value: day },
+    { key: 'year',  label: 'Year',  value: year, flex: 1.4 },
+  ];
+  const openItems = open === 'month' ? MONTHS : open === 'day' ? DAYS : YEARS;
+  const openVal   = open === 'month' ? month  : open === 'day' ? day  : year;
+  const dropLayout = open ? tabLayouts[open] : null;
+
+  return (
+    <View style={{ marginBottom: 12, zIndex: 20 }}>
+      <View style={e.dateTabRow} onLayout={ev => setTabRowH(ev.nativeEvent.layout.height)}>
+        {fields.map(f => (
+          <Pressable
+            key={f.key}
+            style={[e.dateTab, { flex: f.flex ?? 1 }, open === f.key && e.dateTabOpen]}
+            onPress={() => toggle(f.key)}
+            onLayout={ev => {
+              const { x, width } = ev.nativeEvent.layout;
+              setTabLayouts(prev => ({ ...prev, [f.key]: { x, width } }));
+            }}
+          >
+            <Text style={e.dateTabLabel}>{f.label}</Text>
+            <Text style={[e.dateTabValue, open === f.key && e.dateTabValueOpen]}>{f.value}</Text>
+            <Ionicons name={open === f.key ? 'chevron-up' : 'chevron-down'} size={11} color={open === f.key ? T.accent : T.muted} />
+          </Pressable>
+        ))}
+      </View>
+      {open && dropLayout && (
+        <View style={[e.dateDropdown, { position: 'absolute', top: tabRowH + 4, left: dropLayout.x, width: dropLayout.width, height: DATE_DROPDOWN_H }]}>
+          <ScrollView ref={listRef} showsVerticalScrollIndicator={false} nestedScrollEnabled style={{ flex: 1 }}>
+            {openItems.map(item => {
+              const selected = item === openVal;
+              return (
+                <Pressable key={item} style={[e.dateOption, selected && e.dateOptionSelected]} onPress={() => pick(open, item)}>
+                  <Text style={[e.dateOptionText, selected && e.dateOptionTextSelected]}>{item}</Text>
+                  {selected && <Ionicons name="checkmark" size={16} color={T.accent} />}
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+          <View style={e.dateFade} pointerEvents="none">
+            <View style={{ flex: 1, backgroundColor: 'rgba(252,249,242,0)' }} />
+            <View style={{ flex: 1, backgroundColor: 'rgba(252,249,242,0.55)' }} />
+            <View style={{ flex: 1, backgroundColor: 'rgba(252,249,242,0.9)' }} />
+          </View>
+        </View>
+      )}
+    </View>
+  );
+}
+
 
 export default function SpotDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [visit, setVisit] = useState<Visit | null>(null);
   const [mapExpanded, setMapExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [rankingAgain, setRankingAgain] = useState(false);
 
   useFocusEffect(useCallback(() => {
     if (id) setVisit(getVisitById(id));
@@ -103,6 +312,10 @@ export default function SpotDetailScreen() {
               <Text style={[styles.ratingSlash, { color: color + 'AA' }]}>/10</Text>
             </View>
             <Text style={styles.ratingCaption}>Overall rating</Text>
+            <Pressable style={styles.rankAgainBtn} onPress={() => setRankingAgain(true)}>
+              <Ionicons name="git-compare-outline" size={13} color={T.accent} />
+              <Text style={styles.rankAgainText}>Rank again</Text>
+            </Pressable>
           </View>
         </View>
 
@@ -190,21 +403,39 @@ export default function SpotDetailScreen() {
           onSave={(updated) => { setVisit(updated); setEditing(false); }}
         />
       )}
+      {rankingAgain && (
+        <RankAgainModal
+          visit={visit}
+          onClose={() => setRankingAgain(false)}
+          onDone={(updated) => { setVisit(updated); setRankingAgain(false); }}
+        />
+      )}
     </View>
   );
 }
 
 function EditModal({ visit, onClose, onSave }: { visit: Visit; onClose: () => void; onSave: (v: Visit) => void }) {
   const [name, setName] = useState(visit.venue_name);
-  const [date, setDate] = useState(visit.visited_at);
   const [notes, setNotes] = useState(visit.notes ?? '');
-  const [activity, setActivity] = useState<ActivityType>(visit.activity_type);
-  const [price, setPrice] = useState<Price>(visit.price);
+  const [activity, setActivity] = useState<ActivityType | null>(visit.activity_type);
+  const [price, setPrice] = useState<Price | undefined>(visit.price);
+  const [dateType, setDateType] = useState<DateType | null>(visit.date_type ?? null);
   const [photos, setPhotos] = useState<string[]>(visit.photos ?? []);
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const initDate = initDateState(visit.visited_at);
+  const [month, setMonth] = useState(initDate.month);
+  const [day, setDay] = useState(initDate.day);
+  const [year, setYear] = useState(initDate.year);
 
-  async function pickAndUploadPhoto() {
+  const visitedAt = (() => {
+    const mi = MONTHS.indexOf(month) + 1;
+    const di = parseInt(day);
+    const yi = parseInt(year);
+    return `${yi}-${String(mi).padStart(2, '0')}-${String(di).padStart(2, '0')}`;
+  })();
+
+  async function pickPhoto() {
     if (!NativeModules.ExponentImagePicker) {
       Alert.alert('Not available', 'Run `npx expo run:ios` to enable photo upload.');
       return;
@@ -213,29 +444,26 @@ function EditModal({ visit, onClose, onSave }: { visit: Visit; onClose: () => vo
       const ImagePicker = await import('expo-image-picker');
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') { Alert.alert('Permission needed', 'Allow photo library access.'); return; }
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true, quality: 0.8,
-      });
+      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, quality: 0.8 });
       if (result.canceled || !result.assets[0]) return;
       setUploading(true);
-      const path = `spots/${visit.id}/${Date.now()}.jpg`;
-      const url = await uploadPhoto(result.assets[0].uri, path);
+      const url = await uploadPhoto(result.assets[0].uri, `spots/${visit.id}/${Date.now()}.jpg`);
       if (url) setPhotos(prev => [...prev, url]);
-      else Alert.alert('Upload failed', 'Could not upload photo. Check your connection.');
-    } catch {
-      Alert.alert('Error', 'Something went wrong picking the photo.');
-    } finally {
-      setUploading(false);
-    }
+      else Alert.alert('Upload failed', 'Could not upload photo.');
+    } catch { Alert.alert('Error', 'Something went wrong.'); }
+    finally { setUploading(false); }
   }
 
   async function handleSave() {
     if (!name.trim()) { Alert.alert('Name required', 'Give this spot a name.'); return; }
     setSaving(true);
     updateVisit(visit.id, {
-      venue_name: name.trim(), visited_at: date,
-      notes: notes.trim() || null, activity_type: activity, price, photos,
+      venue_name: name.trim(), visited_at: visitedAt,
+      notes: notes.trim() || null,
+      activity_type: activity ?? visit.activity_type,
+      price: price ?? visit.price,
+      date_type: dateType,
+      photos,
     });
     const updated = getVisitById(visit.id);
     setSaving(false);
@@ -253,56 +481,72 @@ function EditModal({ visit, onClose, onSave }: { visit: Visit; onClose: () => vo
           </Pressable>
         </View>
         <ScrollView style={e.form} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-          <TextInput style={e.input} placeholder="Venue name" placeholderTextColor="#c7c7cc" value={name} onChangeText={setName} autoFocus returnKeyType="next" />
-          <TextInput style={e.input} placeholder="Date (e.g. Apr 28)" placeholderTextColor="#c7c7cc" value={date} onChangeText={setDate} returnKeyType="next" />
-          <Text style={e.label}>Type of spot</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={e.chipScroll}>
+
+          <TextInput style={e.input} placeholder="Name your date!" placeholderTextColor={T.placeholder} value={name} onChangeText={setName} autoFocus returnKeyType="next" />
+
+          <Text style={e.sectionLabel}>Date</Text>
+          <EditDatePicker month={month} day={day} year={year} onMonthChange={setMonth} onDayChange={setDay} onYearChange={setYear} />
+
+          <Text style={e.sectionLabel}>Photos</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={e.photoScroll} contentContainerStyle={e.photoScrollContent}>
+            {photos.map((uri, idx) => (
+              <Pressable key={idx} style={e.photoThumb} onLongPress={() => setPhotos(prev => prev.filter((_, i) => i !== idx))}>
+                <Image source={{ uri }} style={e.photoThumbImg} resizeMode="cover" />
+              </Pressable>
+            ))}
+            <Pressable style={e.photoAdd} onPress={pickPhoto} disabled={uploading}>
+              <Ionicons name={uploading ? 'hourglass-outline' : 'camera-outline'} size={22} color={T.muted} />
+              <Text style={e.photoAddLabel}>{uploading ? 'Uploading…' : 'Add photo'}</Text>
+            </Pressable>
+          </ScrollView>
+
+          <Text style={e.sectionLabel}>What kind of spot?</Text>
+          <View style={e.chipWrap}>
             {ACTIVITY_TYPES.map(a => {
               const sel = activity === a.value;
               return (
-                <Pressable key={a.value} style={[e.chip, sel && e.chipSel]} onPress={() => setActivity(a.value)}>
+                <Pressable key={a.value} style={[e.chip, sel && e.chipSel]} onPress={() => setActivity(sel ? null : a.value)}>
                   <Text style={[e.chipLabel, sel && e.chipLabelSel]}>{a.label}</Text>
                 </Pressable>
               );
             })}
-          </ScrollView>
-          <Text style={e.label}>Price range</Text>
+          </View>
+
+          <Text style={e.sectionLabel}>Price range</Text>
           <View style={e.priceRow}>
-            {([1, 2, 3] as Price[]).map(p => {
+            {([0, 1, 2, 3] as Price[]).map(p => {
               const sel = price === p;
               return (
-                <Pressable key={p} style={[e.priceBtn, sel && e.priceBtnSel]} onPress={() => setPrice(p)}>
+                <Pressable key={p} style={[e.priceBtn, sel && e.priceBtnSel]} onPress={() => setPrice(sel ? undefined : p)}>
                   <Text style={[e.priceBtnText, sel && e.priceBtnTextSel]}>{PRICE_LABELS[p]}</Text>
                 </Pressable>
               );
             })}
           </View>
-          <TextInput style={[e.input, e.inputMulti]} placeholder="Notes — what made it memorable?" placeholderTextColor="#c7c7cc" value={notes} onChangeText={setNotes} multiline numberOfLines={4} />
 
-          {/* Photos */}
-          <Text style={e.label}>Photos</Text>
-          <View style={e.photoGrid}>
-            {photos.map((uri, idx) => (
-              <View key={idx} style={e.photoThumbWrap}>
-                <Image source={{ uri }} style={e.photoThumb} resizeMode="cover" />
-                <Pressable
-                  style={e.photoRemove}
-                  onPress={() => setPhotos(prev => prev.filter((_, i) => i !== idx))}
-                  hitSlop={4}
-                >
-                  <Ionicons name="close-circle" size={20} color="#fff" />
+          <Text style={e.sectionLabel}>What kind of date?</Text>
+          <View style={e.chipWrap}>
+            {DATE_TYPES.map(d => {
+              const sel = dateType === d.value;
+              return (
+                <Pressable key={d.value} style={[e.chip, sel && e.chipSel]} onPress={() => setDateType(sel ? null : d.value)}>
+                  <Text style={[e.chipLabel, sel && e.chipLabelSel]}>{d.label}</Text>
                 </Pressable>
-              </View>
-            ))}
-            <Pressable style={e.photoAdd} onPress={pickAndUploadPhoto} disabled={uploading}>
-              {uploading
-                ? <Text style={e.photoAddText}>Uploading…</Text>
-                : <><Ionicons name="camera-outline" size={22} color="#8e8e93" /><Text style={e.photoAddText}>Add</Text></>
-              }
-            </Pressable>
+              );
+            })}
           </View>
 
-          <View style={{ height: 24 }} />
+          <TextInput
+            style={[e.input, e.inputMulti]}
+            placeholder="Notes — what made it memorable?"
+            placeholderTextColor={T.placeholder}
+            value={notes}
+            onChangeText={setNotes}
+            multiline
+            numberOfLines={4}
+          />
+
+          <View style={{ height: 32 }} />
         </ScrollView>
       </SafeAreaView>
     </Modal>
@@ -335,7 +579,13 @@ const styles = StyleSheet.create({
   },
   tagText: { fontSize: 13, fontWeight: '500', color: T.muted },
 
-  ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
+  rankAgainBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4, marginLeft: 'auto',
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20,
+    borderWidth: 1, borderColor: T.accent, backgroundColor: T.accentTint,
+  },
+  rankAgainText: { fontSize: 12, fontWeight: '600', color: T.accent },
   ratingBadge: {
     flexDirection: 'row', alignItems: 'baseline', gap: 2,
     paddingHorizontal: 13, paddingVertical: 6, borderRadius: 999,
@@ -405,32 +655,48 @@ const e = StyleSheet.create({
   title: { fontSize: 17, fontWeight: '600', color: T.primary },
   save: { fontSize: 16, fontWeight: '600', color: T.accent },
   form: { paddingHorizontal: 20, paddingTop: 16 },
-  label: { fontSize: 13, fontWeight: '600', color: T.muted, marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 },
-  input: { backgroundColor: T.inputBg, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14, fontSize: 15, color: T.primary, marginBottom: 12 },
-  inputMulti: { minHeight: 100, textAlignVertical: 'top' },
-  chipScroll: { marginBottom: 16, marginHorizontal: -20 },
+
+  sectionLabel: { fontSize: 12, fontWeight: '600', color: T.muted, marginBottom: 7, textTransform: 'uppercase', letterSpacing: 0.5 },
+  input: { backgroundColor: T.inputBg, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14, fontSize: 15, color: T.primary, marginBottom: 16 },
+  inputMulti: { minHeight: 90, textAlignVertical: 'top', marginBottom: 0 },
+
+  chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
   chip: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: T.inputBg, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 9, marginRight: 8,
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: T.inputBg, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8,
     borderWidth: 1.5, borderColor: 'transparent',
   },
   chipSel: { backgroundColor: T.accentTint, borderColor: T.accent },
-  chipEmoji: { fontSize: 15 },
-  chipLabel: { fontSize: 14, fontWeight: '500', color: T.primary },
-  chipLabelSel: { color: T.accent, fontWeight: '700' },
-  priceRow: { flexDirection: 'row', gap: 10, marginBottom: 16 },
-  priceBtn: { flex: 1, backgroundColor: T.inputBg, borderRadius: 12, paddingVertical: 12, alignItems: 'center', borderWidth: 1.5, borderColor: 'transparent' },
+  chipLabel: { fontSize: 13, fontWeight: '600', color: T.primary },
+  chipLabelSel: { color: T.accent },
+
+  priceRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
+  priceBtn: { flex: 1, backgroundColor: T.inputBg, borderRadius: 10, paddingVertical: 12, alignItems: 'center', borderWidth: 1.5, borderColor: 'transparent' },
   priceBtnSel: { backgroundColor: T.accentTint, borderColor: T.accent },
-  priceBtnText: { fontSize: 16, fontWeight: '600', color: T.primary },
+  priceBtnText: { fontSize: 14, fontWeight: '600', color: T.primary },
   priceBtnTextSel: { color: T.accent },
-  photoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
-  photoThumbWrap: { position: 'relative' },
-  photoThumb: { width: 80, height: 80, borderRadius: 10 },
-  photoRemove: { position: 'absolute', top: -6, right: -6 },
+
+  photoScroll: { marginBottom: 16, marginHorizontal: -20 },
+  photoScrollContent: { paddingHorizontal: 20, alignItems: 'center', gap: 8 },
+  photoThumb: { width: 72, height: 72, borderRadius: 10, overflow: 'hidden' },
+  photoThumbImg: { width: '100%', height: '100%' },
   photoAdd: {
-    width: 80, height: 80, borderRadius: 10,
+    width: 72, height: 72, borderRadius: 10,
     backgroundColor: T.inputBg, alignItems: 'center', justifyContent: 'center', gap: 4,
     borderWidth: 1, borderColor: T.border, borderStyle: 'dashed',
   },
-  photoAddText: { fontSize: 11, color: T.muted, fontWeight: '500' },
+  photoAddLabel: { fontSize: 10, color: T.muted, fontWeight: '500' },
+
+  dateTabRow: { flexDirection: 'row', gap: 8 },
+  dateTab: { flex: 1, borderRadius: 12, borderWidth: 1.5, borderColor: T.border, paddingVertical: 10, paddingHorizontal: 10, alignItems: 'center', gap: 2 },
+  dateTabOpen: { borderColor: T.accent, backgroundColor: T.accentTint },
+  dateTabLabel: { fontSize: 10, fontWeight: '600', color: T.muted, letterSpacing: 0.5 },
+  dateTabValue: { fontSize: 18, fontWeight: '700', color: T.primary },
+  dateTabValueOpen: { color: T.accent },
+  dateDropdown: { borderRadius: 12, borderWidth: 1.5, borderColor: T.accent, backgroundColor: T.card, overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.13, shadowRadius: 14, elevation: 10 },
+  dateOption: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, height: DATE_OPTION_H, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.border },
+  dateOptionSelected: { backgroundColor: T.accentTint },
+  dateOptionText: { fontSize: 15, fontWeight: '500', color: T.primary },
+  dateOptionTextSelected: { color: T.accent, fontWeight: '700' },
+  dateFade: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 36 },
 });

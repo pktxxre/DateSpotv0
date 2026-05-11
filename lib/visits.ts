@@ -132,7 +132,7 @@ export function deleteVisit(id: string): void {
 
 export function updateVisit(
   id: string,
-  updates: Partial<Pick<Visit, 'venue_name' | 'notes' | 'visited_at' | 'activity_type' | 'price' | 'photos'>>
+  updates: Partial<Pick<Visit, 'venue_name' | 'notes' | 'visited_at' | 'activity_type' | 'price' | 'photos' | 'date_type'>>
 ): void {
   const db = getDb();
   const fields: string[] = [];
@@ -144,6 +144,7 @@ export function updateVisit(
   if (updates.activity_type !== undefined) { fields.push('activity_type = ?'); values.push(updates.activity_type); }
   if (updates.price !== undefined) { fields.push('price = ?'); values.push(updates.price); }
   if (updates.photos !== undefined) { fields.push('photos = ?'); values.push(JSON.stringify(updates.photos)); }
+  if (updates.date_type !== undefined) { fields.push('date_type = ?'); values.push(updates.date_type ?? null); }
 
   if (fields.length === 0) return;
   values.push(id);

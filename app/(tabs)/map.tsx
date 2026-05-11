@@ -17,7 +17,7 @@ export function scheduleOpenFutureDate() { _pendingOpenFuture = true; }
 import { Ionicons } from '@expo/vector-icons';
 import * as Crypto from 'expo-crypto';
 import {
-  getAllVisits, insertVisit, ratingColor, formatRating, Visit,
+  getAllVisits, insertVisit, ratingColor, formatRating, friendlyDate, Visit,
   ActivityType, Price, DateType, ACTIVITY_TYPES, PRICE_LABELS, DATE_TYPES,
 } from '@/lib/visits';
 import {
@@ -55,6 +55,7 @@ export default function MapScreen() {
   const [visits, setVisits] = useState<Visit[]>([]);
   const [futureSpots, setFutureSpots] = useState<FutureSpot[]>([]);
   const [mapFilter, setMapFilter] = useState<MapFilter>('been');
+  const [region, setRegion] = useState<Region>(SF_REGION);
   const [selectedVisit, setSelectedVisit] = useState<Visit | null>(null);
   const [selectedFuture, setSelectedFuture] = useState<FutureSpot | null>(null);
   const [step, setStep] = useState<Step | null>(null);
@@ -65,6 +66,7 @@ export default function MapScreen() {
   const sheetRef = useRef<BottomSheet>(null);
   const mapRef = useRef<MapView>(null);
   const toModalRef = useRef(false);
+  const lastPinPressAt = useRef(0);
 
   useFocusEffect(
     useCallback(() => {
@@ -200,6 +202,7 @@ export default function MapScreen() {
   }
 
   function handleMapPress(e: MapPressEvent) {
+    if (Date.now() - lastPinPressAt.current < 300) return;
     if (!droppingPin) {
       setSelectedVisit(null);
       setSelectedFuture(null);
@@ -295,6 +298,7 @@ export default function MapScreen() {
 
   function handlePinPress(visit: Visit) {
     if (step !== null) return;
+    lastPinPressAt.current = Date.now();
     setSelectedVisit((prev) => (prev?.id === visit.id ? null : visit));
   }
 
@@ -310,25 +314,35 @@ export default function MapScreen() {
         showsUserLocation={false}
         showsMyLocationButton={false}
         onPress={handleMapPress}
+        onRegionChangeComplete={(r) => setRegion(r)}
       >
-        {mapFilter === 'been' && visits.map((v) => (
-          <Marker
-            key={v.id}
-            coordinate={{ latitude: v.lat, longitude: v.lng }}
-            onPress={() => handlePinPress(v)}
-          >
-            <View style={[styles.pinBadge, { borderColor: ratingColor(v.rating) }]}>
-              <Text style={[styles.pinScore, { color: ratingColor(v.rating) }]}>{formatRating(v.rating)}</Text>
-            </View>
-          </Marker>
-        ))}
+        {mapFilter === 'been' && visits.map((v) => {
+          const showLabel = region.latitudeDelta < 0.02;
+          return (
+            <Marker
+              key={v.id}
+              coordinate={{ latitude: v.lat, longitude: v.lng }}
+              onPress={() => handlePinPress(v)}
+              tracksViewChanges
+            >
+              <View style={{ alignItems: 'center' }} pointerEvents="none">
+                {showLabel && (
+                  <Text style={styles.pinLabelText} numberOfLines={1}>{v.venue_name}</Text>
+                )}
+                <View style={[styles.pinBadge, { borderColor: ratingColor(v.rating) }]}>
+                  <Text style={[styles.pinScore, { color: ratingColor(v.rating) }]}>{formatRating(v.rating)}</Text>
+                </View>
+              </View>
+            </Marker>
+          );
+        })}
         {mapFilter === 'want' && futureSpots.map((s) => (
           <Marker
             key={s.id}
             coordinate={{ latitude: s.lat, longitude: s.lng }}
             onPress={() => { if (step === null) setSelectedFuture((p) => p?.id === s.id ? null : s); }}
           >
-            <View style={styles.futurePinBadge}>
+            <View style={styles.futurePinBadge} pointerEvents="none">
               <Ionicons name="bookmark" size={13} color="#fff" />
             </View>
           </Marker>
@@ -496,26 +510,30 @@ export default function MapScreen() {
 
 function VisitDetail({ visit, onClose }: { visit: Visit; onClose: () => void }) {
   const info = ACTIVITY_TYPES.find((a) => a.value === visit.activity_type);
+  const color = ratingColor(visit.rating);
+  const dateStr = friendlyDate(visit.visited_at || visit.created_at);
+  const preview = visit.notes?.trim().slice(0, 70) ?? null;
   return (
-    <Pressable style={styles.detailCard} onPress={() => router.push(`/spot/${visit.id}`)}>
-      <View style={styles.detailHeader}>
-        <Text style={styles.detailName} numberOfLines={1}>{visit.venue_name}</Text>
-        <Pressable onPress={onClose} hitSlop={12}>
-          <Ionicons name="close" size={20} color="#8e8e93" />
+    <Pressable style={styles.visitBanner} onPress={() => router.push(`/spot/${visit.id}`)}>
+      <View style={styles.visitBannerInner}>
+        <View style={styles.visitBannerBody}>
+          <View style={styles.visitBannerTop}>
+            <Text style={styles.visitBannerName} numberOfLines={1}>{visit.venue_name}</Text>
+            <View style={[styles.visitBannerPill, { borderColor: color }]}>
+              <Text style={[styles.visitBannerPillText, { color }]}>{formatRating(visit.rating)}</Text>
+            </View>
+          </View>
+          <Text style={styles.visitBannerMeta}>
+            {info?.label} · {PRICE_LABELS[visit.price as Price]} · {dateStr}
+          </Text>
+          {preview ? (
+            <Text style={styles.visitBannerPreview} numberOfLines={1}>{preview}</Text>
+          ) : null}
+        </View>
+        <Pressable onPress={onClose} hitSlop={12} style={styles.visitBannerClose}>
+          <Ionicons name="close" size={18} color={T.muted} />
         </Pressable>
       </View>
-      <View style={styles.detailMeta}>
-        <View style={[styles.detailScorePill, { backgroundColor: ratingColor(visit.rating) + '2E' }]}>
-          <Text style={[styles.detailScoreText, { color: ratingColor(visit.rating) }]}>{formatRating(visit.rating)}</Text>
-        </View>
-        <Text style={styles.detailMetaText}>{info?.label}</Text>
-        <Text style={styles.detailMetaDot}>·</Text>
-        <Text style={styles.detailMetaText}>{PRICE_LABELS[visit.price as Price]}</Text>
-      </View>
-      {visit.notes ? (
-        <Text style={styles.detailNotes} numberOfLines={2}>{visit.notes}</Text>
-      ) : null}
-      <Text style={styles.detailTapHint}>Tap to view details →</Text>
     </Pressable>
   );
 }
@@ -605,21 +623,23 @@ function FutureDetail({ spot, onClose, onDelete }: {
   spot: FutureSpot; onClose: () => void; onDelete: () => void;
 }) {
   return (
-    <View style={styles.detailCard}>
-      <View style={styles.detailHeader}>
-        <Text style={styles.detailName} numberOfLines={1}>{spot.venue_name}</Text>
-        <Pressable onPress={onClose} hitSlop={12}>
-          <Ionicons name="close" size={20} color="#8e8e93" />
+    <Pressable style={styles.visitBanner} onPress={() => router.push(`/future/${spot.id}` as any)}>
+      <View style={styles.visitBannerInner}>
+        <View style={styles.visitBannerBody}>
+          <View style={styles.visitBannerTop}>
+            <Text style={styles.visitBannerName} numberOfLines={1}>{spot.venue_name}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Ionicons name="bookmark" size={12} color="#5856d6" />
+              <Text style={{ fontSize: 12, fontWeight: '600', color: '#5856d6' }}>Want to go</Text>
+            </View>
+          </View>
+          <Text style={styles.visitBannerMeta}>Added {friendlyDate(spot.created_at)}</Text>
+        </View>
+        <Pressable onPress={onClose} hitSlop={12} style={styles.visitBannerClose}>
+          <Ionicons name="close" size={18} color={T.muted} />
         </Pressable>
       </View>
-      <View style={styles.detailMeta}>
-        <Ionicons name="bookmark" size={14} color="#5856d6" />
-        <Text style={[styles.detailMetaText, { color: '#5856d6' }]}>Future Date</Text>
-      </View>
-      <Pressable style={styles.deleteBtn} onPress={onDelete}>
-        <Text style={styles.deleteBtnText}>Remove</Text>
-      </Pressable>
-    </View>
+    </Pressable>
   );
 }
 
@@ -1090,11 +1110,6 @@ const styles = StyleSheet.create({
   filterPillText: { fontSize: 14, fontWeight: '600', color: T.muted },
   filterPillTextActive: { color: '#fff' },
 
-  deleteBtn: {
-    marginTop: 12, backgroundColor: '#fff2f2', borderRadius: 10,
-    paddingVertical: 10, alignItems: 'center',
-  },
-  deleteBtnText: { color: '#ff3b30', fontSize: 14, fontWeight: '600' },
 
   pinHint: {
     position: 'absolute', top: 60, alignSelf: 'center',
@@ -1103,24 +1118,28 @@ const styles = StyleSheet.create({
   },
   pinHintText: { color: '#fff', fontSize: 14, fontWeight: '600' },
 
-  detailCard: {
-    position: 'absolute', bottom: 90, left: 16, right: 16,
-    backgroundColor: '#fff', borderRadius: 16, padding: 16,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12, shadowRadius: 12, elevation: 6,
+  visitBanner: {
+    position: 'absolute', top: 106, left: 12, right: 12,
+    backgroundColor: 'rgba(255,255,255,0.85)', borderRadius: 8,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.1, shadowRadius: 10, elevation: 6,
   },
-  detailHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, gap: 8 },
-  detailName: { flex: 1, fontSize: 16, fontWeight: '700', color: T.primary },
-  detailMeta: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  detailScorePill: {
-    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12,
-    alignItems: 'center', justifyContent: 'center',
+  visitBannerInner: { flexDirection: 'row', alignItems: 'flex-start', padding: 14, gap: 8 },
+  visitBannerBody: { flex: 1 },
+  visitBannerTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 },
+  visitBannerName: { fontSize: 15, fontWeight: '600', color: T.primary, flex: 1, marginRight: 8 },
+  visitBannerMeta: { fontSize: 12, color: T.muted, marginBottom: 3 },
+  visitBannerPreview: { fontSize: 12, color: '#A0927E', fontStyle: 'italic', lineHeight: 16 },
+  visitBannerPill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, borderWidth: 1.5, backgroundColor: 'transparent' },
+  visitBannerPillText: { fontSize: 12, fontWeight: '800' },
+  visitBannerClose: { paddingTop: 1 },
+
+  pinLabelText: {
+    fontSize: 11, fontWeight: '700', color: T.primary,
+    marginBottom: 3, maxWidth: 130, textAlign: 'center',
+    textShadowColor: 'rgba(255,255,255,0.9)', textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 4,
   },
-  detailScoreText: { fontSize: 13, fontWeight: '800' },
-  detailMetaText: { fontSize: 14, color: T.primary },
-  detailMetaDot: { fontSize: 14, color: T.placeholder },
-  detailNotes: { fontSize: 13, color: T.muted, marginTop: 10, lineHeight: 18 },
-  detailTapHint: { fontSize: 12, color: T.placeholder, marginTop: 10, textAlign: 'right' },
 
   fabRow: {
     position: 'absolute', bottom: 24, right: 20,
