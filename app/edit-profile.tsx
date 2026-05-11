@@ -6,6 +6,7 @@ import {
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { getProfile, saveProfile } from '@/lib/profile';
 import { uploadPhoto } from '@/lib/storage';
 import { T } from '@/lib/theme';
@@ -26,12 +27,6 @@ export default function EditProfileScreen() {
   }, []);
 
   const pickPhoto = async () => {
-    let ImagePicker: any;
-    try { ImagePicker = require('expo-image-picker'); } catch {}
-    if (!ImagePicker?.requestMediaLibraryPermissionsAsync) {
-      Alert.alert('Photo picking unavailable', 'Run `npx expo run:ios` once to compile the native photo module.');
-      return;
-    }
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
       Alert.alert('Permission needed', 'Allow access to your photos to set a profile picture.');
@@ -71,8 +66,14 @@ export default function EditProfileScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       {/* Header */}
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} hitSlop={12} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={24} color={T.primary} />
+        <Pressable
+          onPress={() => router.back()}
+          hitSlop={12}
+          style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.6 }]}
+        >
+          <View style={styles.backBtnCircle}>
+            <Ionicons name="chevron-back" size={20} color={T.primary} />
+          </View>
         </Pressable>
         <Text style={styles.headerTitle}>Edit Profile</Text>
         <Pressable
@@ -154,6 +155,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20, paddingTop: 6, paddingBottom: 14,
   },
   backBtn: { marginRight: 'auto' },
+  backBtnCircle: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: T.inputBg,
+    alignItems: 'center', justifyContent: 'center',
+  },
   headerTitle: {
     position: 'absolute', left: 0, right: 0, textAlign: 'center',
     fontSize: 20, fontWeight: '700', color: T.primary,

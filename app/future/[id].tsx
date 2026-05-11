@@ -9,7 +9,6 @@ import { Ionicons } from '@expo/vector-icons';
 import {
   getFutureSpotById, deleteFutureSpot, updateFutureSpot, FutureSpot,
 } from '@/lib/future';
-import { friendlyDate } from '@/lib/visits';
 import { T } from '@/lib/theme';
 
 const H_PAD = 20;
@@ -25,7 +24,18 @@ export default function FutureSpotDetailScreen() {
 
   if (!spot) return null;
 
-  const dateStr = friendlyDate(spot.created_at);
+  const dateStr = (() => {
+    const raw = spot.created_at;
+    if (!raw || !/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw;
+    const [year, month, day] = raw.split('-').map(Number);
+    const d = new Date(year, month - 1, day);
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const diffDays = Math.round((todayStart.getTime() - d.getTime()) / 86400000);
+    if (diffDays === 0) return 'Today';
+    if (diffDays === 1) return 'Yesterday';
+    return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  })();
 
   async function handleShare() {
     try {

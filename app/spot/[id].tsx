@@ -1,8 +1,9 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, Pressable, Modal, Image,
-  Alert, ScrollView, Dimensions, TextInput, Share, NativeModules, LayoutAnimation,
+  Alert, ScrollView, Dimensions, TextInput, Share, LayoutAnimation,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import MapView, { Marker } from 'react-native-maps';
 import { useLocalSearchParams, router, useFocusEffect, Stack } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -436,20 +437,19 @@ function EditModal({ visit, onClose, onSave }: { visit: Visit; onClose: () => vo
   })();
 
   async function pickPhoto() {
-    if (!NativeModules.ExponentImagePicker) {
-      Alert.alert('Not available', 'Run `npx expo run:ios` to enable photo upload.');
-      return;
-    }
     try {
-      const ImagePicker = await import('expo-image-picker');
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') { Alert.alert('Permission needed', 'Allow photo library access.'); return; }
-      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, quality: 0.8 });
-      if (result.canceled || !result.assets[0]) return;
+      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsMultipleSelection: true, allowsEditing: false, quality: 0.8 });
+      if (result.canceled || !result.assets?.length) return;
       setUploading(true);
-      const url = await uploadPhoto(result.assets[0].uri, `spots/${visit.id}/${Date.now()}.jpg`);
-      if (url) setPhotos(prev => [...prev, url]);
-      else Alert.alert('Upload failed', 'Could not upload photo.');
+      const newUris = await Promise.all(
+        result.assets.map(async (asset) => {
+          const url = await uploadPhoto(asset.uri, `spots/${visit.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`);
+          return url ?? asset.uri;
+        })
+      );
+      setPhotos(prev => [...prev, ...newUris]);
     } catch { Alert.alert('Error', 'Something went wrong.'); }
     finally { setUploading(false); }
   }

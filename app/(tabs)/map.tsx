@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   StyleSheet, View, Text, Pressable, TextInput, Alert, ScrollView, Image, LayoutAnimation,
-  Modal, KeyboardAvoidingView, Platform,
+  Modal, KeyboardAvoidingView, Platform, Dimensions,
 } from 'react-native';
 import MapView, { Marker, Region, MapPressEvent } from 'react-native-maps';
 import BottomSheet, { BottomSheetView } from '@gorhom/bottom-sheet';
@@ -25,13 +25,19 @@ import {
   currentComparison, ComparisonState, Triage,
 } from '@/lib/ranking';
 import { saveDraft, loadDraft, clearDraft } from '@/lib/draft';
+import * as ImagePicker from 'expo-image-picker';
 import { uploadPhoto } from '@/lib/storage';
 import { getAllFutureSpots, insertFutureSpot, deleteFutureSpot, FutureSpot } from '@/lib/future';
 import { T } from '@/lib/theme';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, {
+  type SharedValue, useSharedValue, useAnimatedStyle,
+  withRepeat, withSequence, withTiming, runOnJS, cancelAnimation,
+} from 'react-native-reanimated';
 
 const SF_REGION: Region = {
-  latitude: 37.7749,
-  longitude: -122.4194,
+  latitude: 47.6062,
+  longitude: -122.3321,
   latitudeDelta: 0.08,
   longitudeDelta: 0.08,
 };
@@ -340,7 +346,7 @@ export default function MapScreen() {
           <Marker
             key={s.id}
             coordinate={{ latitude: s.lat, longitude: s.lng }}
-            onPress={() => { if (step === null) setSelectedFuture((p) => p?.id === s.id ? null : s); }}
+            onPress={() => { if (step === null) { lastPinPressAt.current = Date.now(); setSelectedFuture((p) => p?.id === s.id ? null : s); } }}
           >
             <View style={styles.futurePinBadge} pointerEvents="none">
               <Ionicons name="bookmark" size={13} color="#fff" />
@@ -657,6 +663,10 @@ function CircleButton({ icon, label, sublabel, onPress, tint }: {
   );
 }
 
+// Full-bleed grid: 4 cols, 3 gaps of 1px
+const PHOTO_COLS = 4;
+const PHOTO_GAP = 1;
+const PHOTO_SIZE = Math.floor((Dimensions.get('window').width - PHOTO_GAP * (PHOTO_COLS - 1)) / PHOTO_COLS);
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const DAYS = Array.from({ length: 31 }, (_, i) => String(i + 1));
 const NOW = new Date();
@@ -797,6 +807,218 @@ function initDateState(dateStr?: string): { month: string; day: string; year: st
   return { month: MONTHS[NOW.getMonth()], day: String(NOW.getDate()), year: String(NOW.getFullYear()) };
 }
 
+function PhotoCell({
+  uri, originalIdx, displayIndex, editing, isDragging,
+  onDragStart, onDragMove, onDragEnd, onDelete, onExitEditing,
+  overlayX, overlayY, gridOriginX, gridOriginY,
+}: {
+  uri: string; originalIdx: number; displayIndex: number;
+  editing: boolean; isDragging: boolean;
+  onDragStart: (oi: number, ax: number, ay: number) => void;
+  onDragMove: (ax: number, ay: number) => void;
+  onDragEnd: () => void;
+  onDelete: () => void;
+  onExitEditing: () => void;
+  overlayX: SharedValue<number>; overlayY: SharedValue<number>;
+  gridOriginX: SharedValue<number>; gridOriginY: SharedValue<number>;
+}) {
+  const rotation = useSharedValue(0);
+
+  useEffect(() => {
+    if (editing && !isDragging) {
+      const phase = originalIdx % 2 === 0 ? 1 : -1;
+      rotation.value = withRepeat(
+        withSequence(
+          withTiming(phase * 2.5, { duration: 60 }),
+          withTiming(-phase * 2.5, { duration: 60 }),
+        ), -1, true
+      );
+    } else {
+      cancelAnimation(rotation);
+      rotation.value = withTiming(0, { duration: 80 });
+    }
+  }, [editing, isDragging]);
+
+  const animStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${rotation.value}deg` }],
+    opacity: isDragging ? 0.3 : 1,
+  }));
+
+  const gesture = useMemo(() =>
+    Gesture.Pan()
+      .activateAfterLongPress(450)
+      .onStart((e) => {
+        'worklet';
+        overlayX.value = e.absoluteX - gridOriginX.value - PHOTO_SIZE / 2;
+        overlayY.value = e.absoluteY - gridOriginY.value - PHOTO_SIZE / 2;
+        runOnJS(onDragStart)(originalIdx, e.absoluteX, e.absoluteY);
+      })
+      .onUpdate((e) => {
+        'worklet';
+        overlayX.value = e.absoluteX - gridOriginX.value - PHOTO_SIZE / 2;
+        overlayY.value = e.absoluteY - gridOriginY.value - PHOTO_SIZE / 2;
+        runOnJS(onDragMove)(e.absoluteX, e.absoluteY);
+      })
+      .onEnd(() => {
+        'worklet';
+        runOnJS(onDragEnd)();
+      }),
+    [originalIdx]
+  );
+
+  const col = displayIndex % PHOTO_COLS;
+  const row = Math.floor(displayIndex / PHOTO_COLS);
+
+  return (
+    <GestureDetector gesture={gesture}>
+      <Animated.View style={[{
+        position: 'absolute',
+        left: col * (PHOTO_SIZE + PHOTO_GAP),
+        top: row * (PHOTO_SIZE + PHOTO_GAP),
+        width: PHOTO_SIZE, height: PHOTO_SIZE, overflow: 'hidden',
+      }, animStyle]}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={editing ? onExitEditing : undefined}>
+          <Image source={{ uri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+        </Pressable>
+        {editing && !isDragging && (
+          <Pressable style={styles.photoDeleteBadge} onPress={onDelete} hitSlop={8}>
+            <Text style={styles.photoDeleteText}>−</Text>
+          </Pressable>
+        )}
+      </Animated.View>
+    </GestureDetector>
+  );
+}
+
+function PhotoGrid({ photos, onReorder, onDelete }: {
+  photos: string[];
+  onReorder: (p: string[]) => void;
+  onDelete: (index: number) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [displayOrder, setDisplayOrder] = useState<number[]>(() => photos.map((_, i) => i));
+  const [dragSrc, setDragSrc] = useState<number | null>(null);
+
+  const dragSrcRef = useRef<number | null>(null);
+  const displayOrderRef = useRef(displayOrder);
+  displayOrderRef.current = displayOrder;
+  const photosRef = useRef(photos);
+  photosRef.current = photos;
+  const onReorderRef = useRef(onReorder);
+  onReorderRef.current = onReorder;
+  const onDeleteRef = useRef(onDelete);
+  onDeleteRef.current = onDelete;
+
+  const gridRef = useRef<View>(null);
+  const gridOriginX = useSharedValue(0);
+  const gridOriginY = useSharedValue(0);
+  const overlayX = useSharedValue(0);
+  const overlayY = useSharedValue(0);
+
+  const photosKey = photos.join(',');
+  useEffect(() => {
+    if (dragSrcRef.current === null) setDisplayOrder(photos.map((_, i) => i));
+  }, [photosKey]);
+
+  function measureGrid() {
+    gridRef.current?.measure((_, __, ___, ____, pageX, pageY) => {
+      gridOriginX.value = pageX;
+      gridOriginY.value = pageY;
+    });
+  }
+
+  const onDragStart = useCallback((originalIdx: number, _ax: number, _ay: number) => {
+    measureGrid();
+    const di = displayOrderRef.current.indexOf(originalIdx);
+    if (di === -1) return;
+    setEditing(true);
+    setDragSrc(di);
+    dragSrcRef.current = di;
+  }, []);
+
+  const onDragMove = useCallback((absX: number, absY: number) => {
+    const relX = absX - gridOriginX.value;
+    const relY = absY - gridOriginY.value;
+    const col = Math.max(0, Math.min(PHOTO_COLS - 1, Math.floor(relX / (PHOTO_SIZE + PHOTO_GAP))));
+    const row = Math.max(0, Math.floor(relY / (PHOTO_SIZE + PHOTO_GAP)));
+    const target = Math.min(row * PHOTO_COLS + col, displayOrderRef.current.length - 1);
+    const src = dragSrcRef.current;
+    if (src !== null && target !== src) {
+      const next = [...displayOrderRef.current];
+      const [moved] = next.splice(src, 1);
+      next.splice(target, 0, moved);
+      setDisplayOrder(next);
+      setDragSrc(target);
+      dragSrcRef.current = target;
+    }
+  }, []);
+
+  const onDragEnd = useCallback(() => {
+    if (dragSrcRef.current !== null) {
+      onReorderRef.current(displayOrderRef.current.map(i => photosRef.current[i]));
+    }
+    setDragSrc(null);
+    dragSrcRef.current = null;
+  }, []);
+
+  const handleDelete = useCallback((originalIdx: number) => {
+    Alert.alert('Remove Photo', 'Remove this photo?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Remove', style: 'destructive', onPress: () => onDeleteRef.current(originalIdx) },
+    ]);
+  }, []);
+
+  const exitEditing = useCallback(() => setEditing(false), []);
+
+  const overlayStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: overlayX.value }, { translateY: overlayY.value }, { scale: 1.08 }],
+  }));
+
+  if (photos.length === 0) return null;
+
+  const rowCount = Math.ceil(photos.length / PHOTO_COLS);
+  const gridHeight = rowCount * PHOTO_SIZE + Math.max(0, rowCount - 1) * PHOTO_GAP;
+
+  return (
+    <View style={[styles.photoGrid, { height: gridHeight }]}>
+      <View ref={gridRef} onLayout={measureGrid} style={{ width: '100%', height: '100%' }}>
+        {displayOrder.map((originalIdx, di) => (
+          <PhotoCell
+            key={`p${originalIdx}`}
+            uri={photos[originalIdx]}
+            originalIdx={originalIdx}
+            displayIndex={di}
+            editing={editing}
+            isDragging={di === dragSrc}
+            onDragStart={onDragStart}
+            onDragMove={onDragMove}
+            onDragEnd={onDragEnd}
+            onDelete={() => handleDelete(originalIdx)}
+            onExitEditing={exitEditing}
+            overlayX={overlayX}
+            overlayY={overlayY}
+            gridOriginX={gridOriginX}
+            gridOriginY={gridOriginY}
+          />
+        ))}
+        {dragSrc !== null && (
+          <Animated.View
+            style={[{
+              position: 'absolute', width: PHOTO_SIZE, height: PHOTO_SIZE,
+              overflow: 'hidden', zIndex: 999, elevation: 8,
+              shadowColor: '#000', shadowOffset: { width: 0, height: 6 },
+              shadowOpacity: 0.35, shadowRadius: 10,
+            }, overlayStyle]}
+            pointerEvents="none"
+          >
+            <Image source={{ uri: photos[displayOrder[dragSrc]] }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+          </Animated.View>
+        )}
+      </View>
+    </View>
+  );
+}
+
 function DetailsStep({ draft, onChange, onNext, onBack }: {
   draft: Partial<DraftVisit>;
   onChange: (key: string, val: any) => void;
@@ -831,12 +1053,6 @@ function DetailsStep({ draft, onChange, onNext, onBack }: {
   const photos: string[] = draft.photos || [];
 
   async function pickPhoto() {
-    let ImagePicker: any;
-    try { ImagePicker = require('expo-image-picker'); } catch {}
-    if (!ImagePicker?.requestMediaLibraryPermissionsAsync) {
-      Alert.alert('Photo picking unavailable', 'Run `npx expo run:ios` once to compile the native photo module.');
-      return;
-    }
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
       Alert.alert('Permission needed', 'Allow photo access in Settings.');
@@ -844,20 +1060,20 @@ function DetailsStep({ draft, onChange, onNext, onBack }: {
     }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 3],
+      allowsMultipleSelection: true,
+      allowsEditing: false,
       quality: 0.8,
     });
-    if (result.canceled || !result.assets[0]) return;
+    if (result.canceled || !result.assets?.length) return;
     setUploading(true);
-    const path = `visits/${Date.now()}.jpg`;
-    const url = await uploadPhoto(result.assets[0].uri, path);
+    const newUris = await Promise.all(
+      result.assets.map(async (asset) => {
+        const url = await uploadPhoto(asset.uri, `visits/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`);
+        return url ?? asset.uri;
+      })
+    );
     setUploading(false);
-    if (url) onChange('photos', [...photos, url]);
-  }
-
-  function removePhoto(index: number) {
-    onChange('photos', photos.filter((_, i) => i !== index));
+    onChange('photos', [...photos, ...newUris]);
   }
 
   return (
@@ -889,22 +1105,15 @@ function DetailsStep({ draft, onChange, onNext, onBack }: {
       )}
 
       <Text style={styles.sectionLabel}>Photos</Text>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.photoScroll}
-        contentContainerStyle={styles.photoScrollContent}
-      >
-        {photos.map((uri, i) => (
-          <Pressable key={i} style={styles.photoThumb} onLongPress={() => removePhoto(i)}>
-            <Image source={{ uri }} style={styles.photoThumbImg} />
-          </Pressable>
-        ))}
-        <Pressable style={styles.photoAdd} onPress={pickPhoto} disabled={uploading}>
-          <Ionicons name={uploading ? 'hourglass-outline' : 'camera-outline'} size={22} color={T.muted} />
-          <Text style={styles.photoAddLabel}>{uploading ? 'Uploading…' : 'Add photo'}</Text>
-        </Pressable>
-      </ScrollView>
+      <Pressable style={styles.photoAdd} onPress={pickPhoto} disabled={uploading}>
+        <Ionicons name={uploading ? 'hourglass-outline' : 'camera-outline'} size={20} color={T.muted} />
+        <Text style={styles.photoAddLabel}>{uploading ? 'Uploading…' : 'Add photos'}</Text>
+      </Pressable>
+      <PhotoGrid
+        photos={photos}
+        onReorder={(p) => onChange('photos', p)}
+        onDelete={(i) => onChange('photos', photos.filter((_, idx) => idx !== i))}
+      />
 
       <Text style={styles.sectionLabel}>What kind of spot?</Text>
       <View style={styles.chipWrap}>
@@ -1202,21 +1411,22 @@ const styles = StyleSheet.create({
   circleBtnSub: { fontSize: 11, color: T.muted, textAlign: 'center', marginTop: 2 },
 
   sectionLabel: { fontSize: 12, fontWeight: '600', color: T.muted, marginBottom: 7, textTransform: 'uppercase', letterSpacing: 0.5 },
-  photoScroll: { marginBottom: 12, marginHorizontal: -24 },
-  photoScrollContent: { paddingHorizontal: 24, alignItems: 'center' },
-  photoThumb: {
-    width: 64, height: 64, borderRadius: 9, overflow: 'hidden',
-    marginRight: 7,
-  },
-  photoThumbImg: { width: '100%', height: '100%' },
   photoAdd: {
-    width: 64, height: 64, borderRadius: 9,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    height: 44, borderRadius: 10,
     borderWidth: 1.5, borderColor: T.border,
     backgroundColor: T.card,
-    alignItems: 'center', justifyContent: 'center', gap: 3,
-    marginRight: 7,
+    marginBottom: 8,
   },
-  photoAddLabel: { fontSize: 10, color: T.muted, fontWeight: '500' },
+  photoAddLabel: { fontSize: 14, color: T.muted, fontWeight: '500' },
+  photoGrid: { marginBottom: 12, marginHorizontal: -24 },
+  photoDeleteBadge: {
+    position: 'absolute', top: 4, right: 4,
+    width: 20, height: 20, borderRadius: 10,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  photoDeleteText: { fontSize: 16, fontWeight: '700', color: '#fff', lineHeight: 20, textAlign: 'center' },
 
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
   chip: {
