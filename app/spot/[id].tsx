@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, Pressable, Modal, Image,
-  Alert, ScrollView, Dimensions, TextInput, Share, NativeModules, LayoutAnimation,
+  Alert, ScrollView, Dimensions, TextInput, Share, LayoutAnimation,
 } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 import { useLocalSearchParams, router, useFocusEffect, Stack } from 'expo-router';
@@ -12,6 +12,7 @@ import {
   ACTIVITY_TYPES, PRICE_LABELS, DATE_TYPES, Price, ActivityType, DateType,
   ratingColor, formatRating, friendlyDate,
 } from '@/lib/visits';
+import { getStacksForVisit } from '@/lib/stacks';
 import {
   startComparison, advance, resolveRankOrder, resolveAtMid,
   currentComparison, ComparisonState,
@@ -23,7 +24,7 @@ import { T } from '@/lib/theme';
 const { width: SCREEN_W } = Dimensions.get('window');
 const H_PAD = 20;
 const PHOTO_COLS = 3;
-const PHOTO_GAP = 4;
+const PHOTO_GAP = 1;
 const PHOTO_SIZE = (SCREEN_W - H_PAD * 2 - PHOTO_GAP * (PHOTO_COLS - 1)) / PHOTO_COLS;
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -50,7 +51,9 @@ function RankAgainModal({ visit, onClose, onDone }: {
   visit: Visit; onClose: () => void; onDone: (updated: Visit) => void;
 }) {
   const others = getAllVisits().filter(v => v.id !== visit.id && v.triage === visit.triage);
-  const [cmpState, setCmpState] = useState<ComparisonState | null>(() => startComparison(others, visit.triage));
+  const [cmpState, setCmpState] = useState<ComparisonState<Visit> | null>(
+    () => startComparison(others, (v) => v.triage === visit.triage)
+  );
 
   function handleResult(result: 'better' | 'worse') {
     const prev = cmpState!;
@@ -128,7 +131,7 @@ const r = StyleSheet.create({
     shadowColor: '#000', shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.2, shadowRadius: 20,
   },
-  title: { fontSize: 20, fontWeight: '700', color: T.primary, fontFamily: 'Georgia', textAlign: 'center', marginBottom: 4 },
+  title: { fontSize: 18, fontWeight: '700', color: T.primary, fontFamily: 'InstrumentSerif-Regular', textAlign: 'center', marginBottom: 4 },
   subtitle: { fontSize: 13, color: T.muted, textAlign: 'center', marginBottom: 20 },
   compareRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
   card: { flex: 1, borderRadius: 16, padding: 14, alignItems: 'center', gap: 8, minHeight: 110, justifyContent: 'center' },
@@ -268,7 +271,12 @@ export default function SpotDetailScreen() {
   }
 
   function handleDelete() {
-    Alert.alert('Remove Spot', `Remove "${visit!.venue_name}" from your log?`, [
+    const inStacks = getStacksForVisit(id);
+    const stackNames = inStacks.map(s => `"${s.name}"`).join(', ');
+    const stackNote = inStacks.length > 0
+      ? `\n\nThis spot is in ${stackNames} and will be permanently removed from it.`
+      : '';
+    Alert.alert('Remove Spot', `Remove "${visit!.venue_name}" from your log?${stackNote}`, [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Remove', style: 'destructive', onPress: () => {
@@ -428,65 +436,86 @@ export default function SpotDetailScreen() {
   );
 }
 
+const ACTIVITY_COLORS_SD: Record<string, string> = {
+  food: '#C4604A',
+  drinks: '#C49A4A',
+  outdoors: '#6A8F6A',
+  view: '#6A8FA0',
+  entertainment: '#8B7BB0',
+  other: '#8B7255',
+};
+
 function SeedSpotDetail({ spot }: { spot: SeedSpot }) {
   const [mapExpanded, setMapExpanded] = useState(false);
   const info = ACTIVITY_TYPES.find(a => a.value === spot.activity_type);
   const color = ratingColor(spot.rating);
   const priceLabel = PRICE_LABELS[spot.price as Price];
+  const heroBg = ACTIVITY_COLORS_SD[spot.activity_type] ?? ACTIVITY_COLORS_SD.other;
+  const catLabel = info?.label ?? spot.activity_type;
 
   function handleLogVisit() {
     router.push('/(tabs)/map');
   }
 
   return (
-    <View style={styles.root}>
+    <View style={{ flex: 1, backgroundColor: '#FCF9F2' }}>
       <Stack.Screen options={{ headerShown: false }} />
-      <SafeAreaView style={styles.headerSafe} edges={['top']}>
-        <View style={styles.header}>
-          <Pressable onPress={() => router.back()} hitSlop={12} style={styles.headerBtn}>
-            <Ionicons name="chevron-back" size={26} color={T.primary} />
+
+      {/* Floating header buttons — absolutely positioned on top of everything */}
+      <SafeAreaView style={sd.floatingHeader} edges={['top']}>
+        <View style={sd.floatingHeaderInner}>
+          <Pressable onPress={() => router.back()} hitSlop={12} style={sd.floatingBtn}>
+            <Ionicons name="chevron-back" size={20} color="#fff" />
           </Pressable>
           <View style={{ flex: 1 }} />
-          <View style={sd.editorBadge}>
-            <Text style={sd.editorBadgeText}>Editor's pick</Text>
-          </View>
+          <Pressable hitSlop={12} style={sd.floatingBtn}>
+            <Ionicons name="bookmark-outline" size={16} color="#fff" />
+          </Pressable>
+          <Pressable hitSlop={12} style={sd.floatingBtn}>
+            <Ionicons name="share-outline" size={16} color="#fff" />
+          </Pressable>
         </View>
       </SafeAreaView>
 
-      <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        <View style={styles.hero}>
-          <Text style={styles.venueName}>{spot.venue_name}</Text>
-
-          <View style={styles.tags}>
-            {info && (
-              <View style={styles.tag}><Text style={styles.tagText}>{info.label}</Text></View>
-            )}
-            {priceLabel ? (
-              <View style={styles.tag}><Text style={styles.tagText}>{priceLabel}</Text></View>
-            ) : null}
-          </View>
-
-          <View style={styles.ratingRow}>
-            <View style={[styles.ratingBadge, { borderColor: color }]}>
-              <Text style={[styles.ratingScore, { color }]}>{spot.rating.toFixed(1)}</Text>
-              <Text style={[styles.ratingSlash, { color: color + 'AA' }]}>/10</Text>
-            </View>
-            <Text style={styles.ratingCaption}>Editor score</Text>
+      <ScrollView showsVerticalScrollIndicator={false}>
+        {/* Full-bleed colored hero */}
+        <View style={[sd.hero, { backgroundColor: heroBg }]}>
+          <View style={sd.heroContent}>
+            <Text style={sd.heroMeta}>
+              {catLabel.toUpperCase()}{priceLabel ? ` · ${priceLabel}` : ''}
+            </Text>
+            <Text style={sd.heroName}>{spot.venue_name}</Text>
+            <Text style={sd.heroCity}>Seattle</Text>
           </View>
         </View>
 
-        {spot.notes ? (
-          <View style={styles.section}>
-            <Text style={styles.sectionLabel}>Why it's a great date</Text>
-            <View style={styles.notesCard}>
-              <Text style={styles.notesText}>{spot.notes}</Text>
+        {/* White card overlapping hero */}
+        <View style={sd.whiteCard}>
+          {/* Badge row */}
+          <View style={sd.badgeRow}>
+            <View style={sd.editorBadge}>
+              <Ionicons name="star" size={11} color="#E76F51" style={{ marginRight: 4 }} />
+              <Text style={sd.editorBadgeText}>EDITOR'S PICK</Text>
+            </View>
+            <View style={[sd.ratingBadge, { borderColor: color }]}>
+              <Text style={[sd.ratingBadgeText, { color }]}>{spot.rating.toFixed(1)}</Text>
             </View>
           </View>
-        ) : null}
 
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Location</Text>
-          <Pressable style={styles.mapCard} onPress={() => setMapExpanded(true)}>
+          <View style={{ height: 20 }} />
+
+          {/* Why it's a great date */}
+          {spot.notes ? (
+            <>
+              <Text style={sd.sectionLabel}>WHY IT'S A GREAT DATE</Text>
+              <Text style={sd.notesText}>{spot.notes}</Text>
+              <View style={{ height: 16 }} />
+            </>
+          ) : null}
+
+          {/* Where it is */}
+          <Text style={sd.sectionLabel}>WHERE IT IS</Text>
+          <View style={sd.mapWrap}>
             <MapView
               style={StyleSheet.absoluteFill}
               region={{ latitude: spot.lat, longitude: spot.lng, latitudeDelta: 0.006, longitudeDelta: 0.006 }}
@@ -500,20 +529,16 @@ function SeedSpotDetail({ spot }: { spot: SeedSpot }) {
                 </View>
               </Marker>
             </MapView>
-            <View style={styles.mapHint}>
-              <Ionicons name="expand-outline" size={12} color="#fff" />
-              <Text style={styles.mapHintText}>Expand</Text>
-            </View>
-          </Pressable>
-        </View>
+          </View>
 
-        <View style={{ height: 100 }} />
+          <View style={{ height: 120 }} />
+        </View>
       </ScrollView>
 
+      {/* Fixed bottom CTA */}
       <SafeAreaView style={sd.ctaSafe} edges={['bottom']}>
         <Pressable style={sd.logCta} onPress={handleLogVisit}>
-          <Ionicons name="add-circle-outline" size={20} color="#fff" />
-          <Text style={sd.logCtaText}>Log your visit</Text>
+          <Text style={sd.logCtaText}>+ Log your visit</Text>
         </Pressable>
       </SafeAreaView>
 
@@ -548,16 +573,127 @@ function SeedSpotDetail({ spot }: { spot: SeedSpot }) {
 }
 
 const sd = StyleSheet.create({
-  editorBadge: {
-    backgroundColor: '#FFF0EB', borderRadius: 6,
-    paddingHorizontal: 10, paddingVertical: 4,
-    marginRight: 12,
+  floatingHeader: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
   },
-  editorBadgeText: { fontSize: 11, fontWeight: '600', color: T.accent },
-  ctaSafe: { backgroundColor: T.bg, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: T.border },
+  floatingHeaderInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    gap: 10,
+  },
+  floatingBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  hero: {
+    height: 280,
+    justifyContent: 'flex-end',
+  },
+  heroContent: {
+    position: 'absolute',
+    bottom: 20,
+    left: 20,
+    right: 20,
+  },
+  heroMeta: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.85)',
+    letterSpacing: 1,
+    marginBottom: 6,
+  },
+  heroName: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#fff',
+    fontFamily: 'InstrumentSerif-Regular',
+    lineHeight: 30,
+    marginBottom: 4,
+  },
+  heroCity: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.85)',
+  },
+  whiteCard: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    marginTop: -24,
+    padding: 20,
+    minHeight: 400,
+  },
+  badgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  editorBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF0EB',
+    borderRadius: 99,
+    borderWidth: 1,
+    borderColor: '#E76F51',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+  },
+  editorBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#E76F51',
+    letterSpacing: 0.4,
+  },
+  ratingBadge: {
+    borderRadius: 99,
+    borderWidth: 1.5,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+  },
+  ratingBadgeText: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  sectionLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: T.muted,
+    letterSpacing: 0.8,
+    marginBottom: 8,
+    textTransform: 'uppercase',
+  },
+  notesText: {
+    fontSize: 15,
+    color: '#4B3621',
+    lineHeight: 23,
+  },
+  mapWrap: {
+    height: 160,
+    borderRadius: 14,
+    overflow: 'hidden',
+    backgroundColor: '#e8e8ed',
+  },
+  ctaSafe: {
+    backgroundColor: '#fff',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: T.border,
+  },
   logCta: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: T.accent, borderRadius: 16, marginHorizontal: 16, marginVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#E76F51',
+    borderRadius: 14,
+    marginHorizontal: 16,
+    marginVertical: 12,
     paddingVertical: 16,
   },
   logCtaText: { fontSize: 16, fontWeight: '700', color: '#fff' },
@@ -585,20 +721,24 @@ function EditModal({ visit, onClose, onSave }: { visit: Visit; onClose: () => vo
   })();
 
   async function pickPhoto() {
-    if (!NativeModules.ExponentImagePicker) {
-      Alert.alert('Not available', 'Run `npx expo run:ios` to enable photo upload.');
-      return;
-    }
     try {
       const ImagePicker = await import('expo-image-picker');
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') { Alert.alert('Permission needed', 'Allow photo library access.'); return; }
-      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, quality: 0.8 });
-      if (result.canceled || !result.assets[0]) return;
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsMultipleSelection: true,
+        quality: 0.8,
+      });
+      if (result.canceled || !result.assets.length) return;
       setUploading(true);
-      const url = await uploadPhoto(result.assets[0].uri, `spots/${visit.id}/${Date.now()}.jpg`);
-      if (url) setPhotos(prev => [...prev, url]);
-      else Alert.alert('Upload failed', 'Could not upload photo.');
+      const uploaded: string[] = [];
+      for (const asset of result.assets) {
+        const url = await uploadPhoto(asset.uri, `spots/${visit.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`);
+        if (url) uploaded.push(url);
+      }
+      if (uploaded.length) setPhotos(prev => [...prev, ...uploaded]);
+      else Alert.alert('Upload failed', 'Could not upload photos.');
     } catch { Alert.alert('Error', 'Something went wrong.'); }
     finally { setUploading(false); }
   }
@@ -637,7 +777,7 @@ function EditModal({ visit, onClose, onSave }: { visit: Visit; onClose: () => vo
           <EditDatePicker month={month} day={day} year={year} onMonthChange={setMonth} onDayChange={setDay} onYearChange={setYear} />
 
           <Text style={e.sectionLabel}>Photos</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={e.photoScroll} contentContainerStyle={e.photoScrollContent}>
+          <View style={e.photoGrid}>
             {photos.map((uri, idx) => (
               <Pressable key={idx} style={e.photoThumb} onLongPress={() => setPhotos(prev => prev.filter((_, i) => i !== idx))}>
                 <Image source={{ uri }} style={e.photoThumbImg} resizeMode="cover" />
@@ -647,7 +787,7 @@ function EditModal({ visit, onClose, onSave }: { visit: Visit; onClose: () => vo
               <Ionicons name={uploading ? 'hourglass-outline' : 'camera-outline'} size={22} color={T.muted} />
               <Text style={e.photoAddLabel}>{uploading ? 'Uploading…' : 'Add photo'}</Text>
             </Pressable>
-          </ScrollView>
+          </View>
 
           <Text style={e.sectionLabel}>What kind of spot?</Text>
           <View style={e.chipWrap}>
@@ -758,7 +898,7 @@ const styles = StyleSheet.create({
   notesText: { fontSize: 15, color: T.primary, lineHeight: 23 },
 
   photosGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: PHOTO_GAP },
-  photoThumb: { width: PHOTO_SIZE, height: PHOTO_SIZE, borderRadius: 10, backgroundColor: '#f2f2f7' },
+  photoThumb: { width: PHOTO_SIZE, height: PHOTO_SIZE, borderRadius: 0, backgroundColor: '#f2f2f7' },
 
   mapCard: { height: 140, borderRadius: 14, overflow: 'hidden', backgroundColor: '#e8e8ed' },
   mapHint: {
@@ -825,12 +965,11 @@ const e = StyleSheet.create({
   priceBtnText: { fontSize: 14, fontWeight: '600', color: T.primary },
   priceBtnTextSel: { color: T.accent },
 
-  photoScroll: { marginBottom: 16, marginHorizontal: -20 },
-  photoScrollContent: { paddingHorizontal: 20, alignItems: 'center', gap: 8 },
-  photoThumb: { width: 72, height: 72, borderRadius: 10, overflow: 'hidden' },
+  photoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: PHOTO_GAP, marginBottom: 16 },
+  photoThumb: { width: PHOTO_SIZE, height: PHOTO_SIZE, borderRadius: 0, overflow: 'hidden' },
   photoThumbImg: { width: '100%', height: '100%' },
   photoAdd: {
-    width: 72, height: 72, borderRadius: 10,
+    width: PHOTO_SIZE, height: PHOTO_SIZE, borderRadius: 0,
     backgroundColor: T.inputBg, alignItems: 'center', justifyContent: 'center', gap: 4,
     borderWidth: 1, borderColor: T.border, borderStyle: 'dashed',
   },
