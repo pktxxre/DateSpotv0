@@ -1,0 +1,13 @@
+diff --git a/node_modules/expo-image-picker/expo-module.config.json b/node_modules/expo-image-picker/expo-module.config.json
+index 5ee7a94..53c795b 100644
+--- a/node_modules/expo-image-picker/expo-module.config.json
++++ b/node_modules/expo-image-picker/expo-module.config.json
+@@ -1,7 +1,7 @@
+ {
+   "platforms": ["android", "ios"],
+   "ios": {
+-    "modulesClassNames": ["ImagePickerModule"]
++    "modules": ["ImagePickerModule"]
+   },
+   "android": {
+     "modulesClassNames": ["expo.modules.imagepicker.ImagePickerModule"]

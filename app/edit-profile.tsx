@@ -156,8 +156,8 @@ const styles = StyleSheet.create({
   backBtn: { marginRight: 'auto' },
   headerTitle: {
     position: 'absolute', left: 0, right: 0, textAlign: 'center',
-    fontSize: 20, fontWeight: '700', color: T.primary,
-    fontFamily: 'Georgia', letterSpacing: -0.2,
+    fontSize: 18, fontWeight: '700', color: T.primary,
+    fontFamily: 'InstrumentSerif-Regular', letterSpacing: -0.2,
   },
   saveBtn: { marginLeft: 'auto' },
   saveBtnText: { fontSize: 16, fontWeight: '600', color: T.accent },

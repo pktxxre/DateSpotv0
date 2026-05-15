@@ -44,7 +44,8 @@
         {
           "photosPermission": "DateSpot needs photo access to add photos to your date spots."
         }
-      ]
+      ],
+      "expo-video"
     ],
     "experiments": {
       "typedRoutes": true

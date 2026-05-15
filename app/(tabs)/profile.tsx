@@ -162,8 +162,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20, paddingTop: 6, paddingBottom: 10,
   },
   headerTitle: {
-    fontSize: 20, fontWeight: '700', color: T.primary,
-    fontFamily: 'Georgia', letterSpacing: -0.2,
+    fontSize: 18, fontWeight: '700', color: T.primary,
+    fontFamily: 'InstrumentSerif-Regular', letterSpacing: -0.2,
   },
   gearBtn: {
     position: 'absolute', right: 20,
@@ -181,8 +181,8 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   username: {
-    fontSize: 22, fontWeight: '700', color: T.primary,
-    fontFamily: 'Georgia', letterSpacing: -0.3, marginBottom: 6,
+    fontSize: 19, fontWeight: '700', color: T.primary,
+    fontFamily: 'InstrumentSerif-Regular', letterSpacing: -0.3, marginBottom: 6,
   },
   bio: {
     fontSize: 14, color: T.muted, textAlign: 'center',
@@ -213,8 +213,8 @@ const styles = StyleSheet.create({
 
   activitySection: { paddingHorizontal: 20 },
   sectionTitle: {
-    fontSize: 18, fontWeight: '700', color: T.primary,
-    fontFamily: 'Georgia', marginBottom: 14,
+    fontSize: 16, fontWeight: '700', color: T.primary,
+    fontFamily: 'InstrumentSerif-Regular', marginBottom: 14,
   },
 
   activityRow: {

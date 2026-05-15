@@ -2,6 +2,9 @@ import { StyleSheet, View, Text, ScrollView, Pressable, Alert } from 'react-nati
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { supabase } from '@/lib/supabase';
+import { clearUserData } from '@/lib/db';
+import { clearProfile, clearLastUserId } from '@/lib/profile';
 import { T } from '@/lib/theme';
 
 type SettingRowProps = {
@@ -38,7 +41,11 @@ export default function SettingsScreen() {
   const handleLogout = () => {
     Alert.alert('Log Out', 'Are you sure you want to log out?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Log Out', style: 'destructive', onPress: () => {} },
+      {
+        text: 'Log Out', style: 'destructive', onPress: async () => {
+          await supabase?.auth.signOut();
+        },
+      },
     ]);
   };
 
@@ -48,7 +55,23 @@ export default function SettingsScreen() {
       'This will permanently delete your account and all your data. This cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: () => {} },
+        {
+          text: 'Delete', style: 'destructive', onPress: async () => {
+            try {
+              // Delete account from Supabase auth (requires delete_user() SQL function)
+              const { error } = await supabase!.rpc('delete_user');
+              if (error) throw error;
+            } catch (e) {
+              // If RPC fails, still clear local data and sign out
+              console.warn('delete_user RPC error:', e);
+            }
+            // Always clear local data regardless of RPC result
+            await clearUserData();
+            await clearProfile();
+            await clearLastUserId();
+            await supabase?.auth.signOut();
+          },
+        },
       ]
     );
   };
@@ -141,8 +164,8 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     flex: 1, textAlign: 'center',
-    fontSize: 20, fontWeight: '700', color: T.primary,
-    fontFamily: 'Georgia', letterSpacing: -0.2,
+    fontSize: 18, fontWeight: '700', color: T.primary,
+    fontFamily: 'InstrumentSerif-Regular', letterSpacing: -0.2,
   },
   headerSpacer: { width: 36 },
 

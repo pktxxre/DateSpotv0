@@ -85,8 +85,8 @@ const styles = StyleSheet.create({
   },
   backBtn: { width: 36, alignItems: 'flex-start' },
   headerTitle: {
-    fontSize: 20, fontWeight: '700', color: T.primary,
-    fontFamily: 'Georgia', letterSpacing: -0.2,
+    fontSize: 18, fontWeight: '700', color: T.primary,
+    fontFamily: 'InstrumentSerif-Regular', letterSpacing: -0.2,
   },
 
   searchWrap: {
@@ -115,8 +115,8 @@ const styles = StyleSheet.create({
 
   emptyWrap: { alignItems: 'center', paddingTop: 60, paddingHorizontal: 40 },
   emptyTitle: {
-    fontSize: 18, fontWeight: '700', color: T.primary,
-    fontFamily: 'Georgia', marginBottom: 8,
+    fontSize: 16, fontWeight: '700', color: T.primary,
+    fontFamily: 'InstrumentSerif-Regular', marginBottom: 8,
   },
   emptyBody: { fontSize: 14, color: T.muted, textAlign: 'center', lineHeight: 20 },
 });

@@ -40,6 +40,21 @@ export async function initDb(): Promise<void> {
       notes      TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS stacks (
+      id         TEXT PRIMARY KEY,
+      name       TEXT NOT NULL,
+      rating     REAL NOT NULL DEFAULT 0,
+      rank_order REAL NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS stack_visits (
+      stack_id   TEXT NOT NULL REFERENCES stacks(id) ON DELETE CASCADE,
+      visit_id   TEXT NOT NULL REFERENCES visits(id),
+      position   INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (stack_id, visit_id)
+    );
   `);
 
   // Migrate existing installs that are missing columns
@@ -62,4 +77,17 @@ export async function initDb(): Promise<void> {
   if (!cols.includes('date_type')) {
     db.runSync(`ALTER TABLE visits ADD COLUMN date_type TEXT`);
   }
+  if (!cols.includes('is_seed')) {
+    db.runSync(`ALTER TABLE visits ADD COLUMN is_seed INTEGER NOT NULL DEFAULT 0`);
+  }
+}
+
+export async function clearUserData(): Promise<void> {
+  const db = getDb();
+  await db.execAsync(`
+    DELETE FROM stack_visits;
+    DELETE FROM stacks;
+    DELETE FROM visits;
+    DELETE FROM future_spots;
+  `);
 }

@@ -6,15 +6,24 @@ import {
 import MapView, { Marker, Region, MapPressEvent } from 'react-native-maps';
 import BottomSheet, { BottomSheetView } from '@gorhom/bottom-sheet';
 import * as Location from 'expo-location';
+import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect, router } from 'expo-router';
-
-// Module-level flags so home screen can arm flows before switching tabs.
-let _pendingOpenLog = false;
-export function scheduleOpenLog() { _pendingOpenLog = true; }
-
-let _pendingOpenFuture = false;
-export function scheduleOpenFutureDate() { _pendingOpenFuture = true; }
 import { Ionicons } from '@expo/vector-icons';
+
+// Direct callbacks allow immediate response when map tab is already focused.
+let _openLogCallback: (() => void) | null = null;
+let _openFutureCallback: (() => void) | null = null;
+let _pendingOpenLog = false;
+let _pendingOpenFuture = false;
+
+export function scheduleOpenLog() {
+  if (_openLogCallback) { _openLogCallback(); }
+  else { _pendingOpenLog = true; }
+}
+export function scheduleOpenFutureDate() {
+  if (_openFutureCallback) { _openFutureCallback(); }
+  else { _pendingOpenFuture = true; }
+}
 import * as Crypto from 'expo-crypto';
 import {
   getAllVisits, insertVisit, ratingColor, formatRating, friendlyDate, Visit,
@@ -22,11 +31,12 @@ import {
 } from '@/lib/visits';
 import {
   startComparison, advance, resolveRankOrder, resolveAtMid,
-  currentComparison, ComparisonState, Triage,
+  currentComparison, ComparisonState,
 } from '@/lib/ranking';
+import type { Triage } from '@/lib/visits';
 import { saveDraft, loadDraft, clearDraft } from '@/lib/draft';
-import { uploadPhoto } from '@/lib/storage';
 import { getAllFutureSpots, insertFutureSpot, deleteFutureSpot, FutureSpot } from '@/lib/future';
+import { getProfile } from '@/lib/profile';
 import { T } from '@/lib/theme';
 
 const SEATTLE_REGION: Region = {
@@ -34,6 +44,10 @@ const SEATTLE_REGION: Region = {
   longitude: -122.3321,
   latitudeDelta: 0.08,
   longitudeDelta: 0.08,
+};
+
+const CITY_REGIONS: Record<string, Region> = {
+  'Seattle, WA': SEATTLE_REGION,
 };
 
 type Step = 'location' | 'details' | 'triage' | 'compare' | 'done' | 'future-pin' | 'future-name';
@@ -61,12 +75,30 @@ export default function MapScreen() {
   const [step, setStep] = useState<Step | null>(null);
   const [draft, setDraft] = useState<Partial<DraftVisit>>({});
   const [droppingPin, setDroppingPin] = useState(false);
-  const [cmpState, setCmpState] = useState<ComparisonState | null>(null);
+  const [cmpState, setCmpState] = useState<ComparisonState<Visit> | null>(null);
   const [currentTriage, setCurrentTriage] = useState<Triage>('okay');
   const sheetRef = useRef<BottomSheet>(null);
   const mapRef = useRef<MapView>(null);
   const toModalRef = useRef(false);
   const lastPinPressAt = useRef(0);
+
+  useEffect(() => {
+    _openLogCallback = () => {
+      setSelectedVisit(null);
+      setStep('location');
+      sheetRef.current?.snapToIndex(1);
+    };
+    _openFutureCallback = () => {
+      setSelectedVisit(null);
+      setMapFilter('want');
+      setStep('future-pin');
+      sheetRef.current?.snapToIndex(1);
+    };
+    return () => {
+      _openLogCallback = null;
+      _openFutureCallback = null;
+    };
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -119,6 +151,14 @@ export default function MapScreen() {
     if (step === null || step === 'location' || step === 'future-pin' || step === 'future-name') return;
     saveDraft({ ...draft, step, savedAt: new Date().toISOString() });
   }, [step, draft]);
+
+  const [cityRegion, setCityRegion] = useState<Region | null>(null);
+  useEffect(() => {
+    getProfile().then(profile => {
+      const r = CITY_REGIONS[profile.city];
+      if (r) { setRegion(r); setCityRegion(r); }
+    });
+  }, []);
 
   useEffect(() => {
     Location.getForegroundPermissionsAsync().then(({ status }) => {
@@ -247,7 +287,7 @@ export default function MapScreen() {
   function handleTriage(triage: Triage) {
     setCurrentTriage(triage);
     const existing = getAllVisits();
-    const initial = startComparison(existing, triage);
+    const initial = startComparison(existing, (v) => v.triage === triage);
     setCmpState(initial);
     setStep('compare'); // always go to step 4; NoCompareStep handles the null case
   }
@@ -315,6 +355,9 @@ export default function MapScreen() {
         showsMyLocationButton={false}
         onPress={handleMapPress}
         onRegionChangeComplete={(r) => setRegion(r)}
+        onMapReady={() => {
+          if (cityRegion) mapRef.current?.animateToRegion(cityRegion, 600);
+        }}
       >
         {mapFilter === 'been' && visits.map((v) => {
           const showLabel = region.latitudeDelta < 0.02;
@@ -394,26 +437,6 @@ export default function MapScreen() {
         />
       )}
 
-      {step === null && (
-        <View style={styles.fabRow} pointerEvents="box-none">
-          {visits.length === 0 && mapFilter === 'been' && (
-            <View style={styles.emptyState} pointerEvents="none">
-              <Text style={styles.emptyText}>Tap + to log your first date spot</Text>
-            </View>
-          )}
-          {futureSpots.length === 0 && mapFilter === 'want' && (
-            <View style={styles.emptyState} pointerEvents="none">
-              <Text style={styles.emptyText}>Tap + to add a future date</Text>
-            </View>
-          )}
-          <Pressable style={styles.fab} onPress={mapFilter === 'been' ? openLog : () => {
-            setStep('future-pin');
-            sheetRef.current?.snapToIndex(1);
-          }} hitSlop={8}>
-            <Ionicons name="add" size={30} color="#fff" />
-          </Pressable>
-        </View>
-      )}
 
       <BottomSheet
         ref={sheetRef}
@@ -803,7 +826,6 @@ function DetailsStep({ draft, onChange, onNext, onBack }: {
   onNext: () => void;
   onBack: () => void;
 }) {
-  const [uploading, setUploading] = useState(false);
   const initDate = initDateState(draft.visited_at);
   const [month, setMonth] = useState(initDate.month);
   const [day, setDay] = useState(initDate.day);
@@ -831,12 +853,6 @@ function DetailsStep({ draft, onChange, onNext, onBack }: {
   const photos: string[] = draft.photos || [];
 
   async function pickPhoto() {
-    let ImagePicker: any;
-    try { ImagePicker = require('expo-image-picker'); } catch {}
-    if (!ImagePicker?.requestMediaLibraryPermissionsAsync) {
-      Alert.alert('Photo picking unavailable', 'Run `npx expo run:ios` once to compile the native photo module.');
-      return;
-    }
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
       Alert.alert('Permission needed', 'Allow photo access in Settings.');
@@ -844,16 +860,13 @@ function DetailsStep({ draft, onChange, onNext, onBack }: {
     }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 3],
+      allowsMultipleSelection: true,
       quality: 0.8,
     });
-    if (result.canceled || !result.assets[0]) return;
-    setUploading(true);
-    const path = `visits/${Date.now()}.jpg`;
-    const url = await uploadPhoto(result.assets[0].uri, path);
-    setUploading(false);
-    if (url) onChange('photos', [...photos, url]);
+    if (result.canceled || !result.assets?.length) return;
+    // Store local URIs immediately — they're valid for this session.
+    // Upload happens in the edit flow once Supabase storage is configured.
+    onChange('photos', [...photos, ...result.assets.map(a => a.uri)]);
   }
 
   function removePhoto(index: number) {
@@ -900,9 +913,9 @@ function DetailsStep({ draft, onChange, onNext, onBack }: {
             <Image source={{ uri }} style={styles.photoThumbImg} />
           </Pressable>
         ))}
-        <Pressable style={styles.photoAdd} onPress={pickPhoto} disabled={uploading}>
-          <Ionicons name={uploading ? 'hourglass-outline' : 'camera-outline'} size={22} color={T.muted} />
-          <Text style={styles.photoAddLabel}>{uploading ? 'Uploading…' : 'Add photo'}</Text>
+        <Pressable style={styles.photoAdd} onPress={pickPhoto}>
+          <Ionicons name="camera-outline" size={22} color={T.muted} />
+          <Text style={styles.photoAddLabel}>Add photo</Text>
         </Pressable>
       </ScrollView>
 
@@ -1119,7 +1132,7 @@ const styles = StyleSheet.create({
   pinHintText: { color: '#fff', fontSize: 14, fontWeight: '600' },
 
   visitBanner: {
-    position: 'absolute', bottom: 90, left: 12, right: 12,
+    position: 'absolute', bottom: 12, left: 12, right: 12,
     backgroundColor: 'rgba(255,255,255,0.97)', borderRadius: 16,
     shadowColor: '#000', shadowOffset: { width: 0, height: -2 },
     shadowOpacity: 0.1, shadowRadius: 12, elevation: 8,
@@ -1141,23 +1154,6 @@ const styles = StyleSheet.create({
     textShadowRadius: 4,
   },
 
-  fabRow: {
-    position: 'absolute', bottom: 24, right: 20,
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-  },
-  emptyState: {
-    backgroundColor: 'rgba(255,255,255,0.92)',
-    borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10,
-  },
-  emptyText: { fontSize: 14, color: T.muted },
-
-  fab: {
-    width: 56, height: 56, borderRadius: 28,
-    backgroundColor: T.accent,
-    alignItems: 'center', justifyContent: 'center',
-    shadowColor: T.accent, shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4, shadowRadius: 8, elevation: 8,
-  },
 
   sheetBg: { backgroundColor: T.bg, borderRadius: 20 },
   sheetContent: { flex: 1 },
@@ -1191,8 +1187,8 @@ const styles = StyleSheet.create({
   dotDone: { backgroundColor: '#c9b89e' },
 
   detailsScroll: { flex: 1 },
-  stepContainer: { paddingHorizontal: 24, paddingTop: 16 },
-  stepTitle: { fontSize: 20, fontWeight: '700', color: T.primary, textAlign: 'center', fontFamily: 'Georgia' },
+  stepContainer: { paddingHorizontal: 24, paddingTop: 16, paddingBottom: 72 },
+  stepTitle: { fontSize: 18, fontWeight: '700', color: T.primary, textAlign: 'center', fontFamily: 'InstrumentSerif-Regular' },
   stepSubtitle: { fontSize: 13, color: T.muted, textAlign: 'center', marginTop: 8, marginBottom: 28 },
 
   circleRow: { flexDirection: 'row', justifyContent: 'space-between' },

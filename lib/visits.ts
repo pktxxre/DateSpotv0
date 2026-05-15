@@ -126,7 +126,21 @@ export function insertVisit(v: NewVisit): void {
 
 export function deleteVisit(id: string): void {
   const db = getDb();
-  db.runSync('DELETE FROM visits WHERE id = ?', [id]);
+  db.withTransactionSync(() => {
+    const affectedStacks = db.getAllSync<{ stack_id: string }>(
+      `SELECT stack_id FROM stack_visits WHERE visit_id = ?`, [id]
+    );
+    db.runSync('DELETE FROM stack_visits WHERE visit_id = ?', [id]);
+    for (const { stack_id } of affectedStacks) {
+      const count = db.getFirstSync<{ n: number }>(
+        `SELECT COUNT(*) AS n FROM stack_visits WHERE stack_id = ?`, [stack_id]
+      );
+      if ((count?.n ?? 0) < 2) {
+        db.runSync('DELETE FROM stacks WHERE id = ?', [stack_id]);
+      }
+    }
+    db.runSync('DELETE FROM visits WHERE id = ?', [id]);
+  });
   recomputeRatings();
 }
 

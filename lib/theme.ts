@@ -1,3 +1,9 @@
+export const Fonts = {
+  serif: 'InstrumentSerif-Regular',
+  sans: 'InstrumentSans-Variable',
+  mono: 'IBMPlexMono-Regular',
+} as const;
+
 export const T = {
   // Surfaces
   bg: '#FCF9F2',
