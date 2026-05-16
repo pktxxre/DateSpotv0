@@ -50,6 +50,7 @@ export interface Visit {
   date_type: DateType | null;
   created_at: string;
   photos: string[];
+  address: string | null;
   canonical_place_id: string | null;
   canonical_name: string | null;
   canonical_lat: number | null;
@@ -62,6 +63,7 @@ export interface NewVisit {
   venue_name: string;
   lat: number;
   lng: number;
+  address?: string;
   visited_at: string;
   rank_order: number;
   notes?: string;
@@ -76,6 +78,7 @@ function parseRow(row: any): Visit {
   return {
     ...row,
     photos: row.photos ? JSON.parse(row.photos) : [],
+    address: row.address ?? null,
     resolution_status: (row.resolution_status as ResolutionStatus) ?? 'pending',
     canonical_place_id: row.canonical_place_id ?? null,
     canonical_name: row.canonical_name ?? null,
@@ -126,16 +129,17 @@ export function getVisitById(id: string): Visit | null {
   return row ? parseRow(row) : null;
 }
 
-export function insertVisit(v: NewVisit, city?: string): void {
+export function insertVisit(v: NewVisit, city?: string, skipResolution = false): void {
   const db = getDb();
   db.runSync(
-    `INSERT INTO visits (id, venue_name, lat, lng, visited_at, rating, rank_order, notes, activity_type, price, triage, date_type, photos, resolution_status)
-     VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
-    [v.id, v.venue_name, v.lat, v.lng, v.visited_at, v.rank_order, v.notes ?? null, v.activity_type, v.price, v.triage, v.date_type ?? null, JSON.stringify(v.photos ?? [])]
+    `INSERT INTO visits (id, venue_name, lat, lng, address, visited_at, rating, rank_order, notes, activity_type, price, triage, date_type, photos, resolution_status)
+     VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [v.id, v.venue_name, v.lat, v.lng, v.address ?? null, v.visited_at, v.rank_order, v.notes ?? null, v.activity_type, v.price, v.triage, v.date_type ?? null, JSON.stringify(v.photos ?? []), skipResolution ? 'failed' : 'pending']
   );
   recomputeRatings();
-  // Fire-and-forget: resolve canonical place in background, never blocks insert
-  resolveCanonicalPlace(v.id, v.venue_name, v.lat, v.lng, city ?? '', v.activity_type);
+  if (!skipResolution) {
+    resolveCanonicalPlace(v.id, v.venue_name, v.lat, v.lng, city ?? '', v.activity_type);
+  }
 }
 
 export function deleteVisit(id: string): void {
@@ -243,7 +247,7 @@ export function recomputeRatings(): void {
   const tiers: Array<{ triage: Triage; min: number; max: number }> = [
     { triage: 'great', min: 7.0, max: 10.0 },
     { triage: 'okay',  min: 4.0, max: 6.7  },
-    { triage: 'bad',   min: 2.0, max: 3.9  },
+    { triage: 'bad',   min: 1.0, max: 3.2  },
   ];
   for (const { triage, min, max } of tiers) {
     const pool = db.getAllSync<{ id: string; rank_order: number }>(

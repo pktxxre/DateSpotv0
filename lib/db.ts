@@ -95,6 +95,9 @@ export async function initDb(): Promise<void> {
   if (!cols.includes('resolution_status')) {
     db.runSync(`ALTER TABLE visits ADD COLUMN resolution_status TEXT NOT NULL DEFAULT 'pending'`);
   }
+  if (!cols.includes('address')) {
+    db.runSync(`ALTER TABLE visits ADD COLUMN address TEXT`);
+  }
 
   // Migrate future_spots canonical columns
   const futureColNames = db.getAllSync<{ name: string }>(

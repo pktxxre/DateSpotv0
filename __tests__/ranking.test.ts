@@ -17,6 +17,7 @@ function makeVisit(id: string, rankOrder: number, triage: 'bad' | 'okay' | 'grea
     date_type: null,
     created_at: '2026-01-01',
     photos: [],
+    address: null,
     canonical_place_id: null,
     canonical_name: null,
     canonical_lat: null,
