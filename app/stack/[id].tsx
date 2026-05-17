@@ -275,8 +275,6 @@ export default function StackDetailScreen() {
         {/* Hero */}
         <View style={s.hero}>
           <Text style={s.heroName}>{detail.name}</Text>
-          <Text style={s.heroDate}>{dateStr}</Text>
-
           <View style={s.heroMeta}>
             <View style={s.spotCountBadge}>
               <Text style={s.spotCountText}>{detail.visits.length} spot{detail.visits.length !== 1 ? 's' : ''}</Text>
