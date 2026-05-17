@@ -57,6 +57,18 @@ export async function initDb(): Promise<void> {
     );
   `);
 
+  // Migrate stacks table
+  const stackCols = db.getAllSync<{ name: string }>(
+    `PRAGMA table_info(stacks)`
+  ).map((r) => r.name);
+
+  if (!stackCols.includes('tier')) {
+    db.runSync(`ALTER TABLE stacks ADD COLUMN tier TEXT`);
+  }
+  if (!stackCols.includes('tier_note')) {
+    db.runSync(`ALTER TABLE stacks ADD COLUMN tier_note TEXT`);
+  }
+
   // Migrate existing installs that are missing columns
   const cols = db.getAllSync<{ name: string }>(
     `PRAGMA table_info(visits)`

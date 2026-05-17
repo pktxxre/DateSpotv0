@@ -293,7 +293,7 @@ export function friendlyDate(raw: string): string {
   if (!raw) return '';
   if (!/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw;
   // Parse as local date to avoid UTC-offset "Today/Yesterday" errors in western timezones.
-  const [year, month, day] = raw.split('-').map(Number);
+  const [year, month, day] = raw.split('T')[0].split('-').map(Number);
   const d = new Date(year, month - 1, day);
   if (isNaN(d.getTime())) return raw;
   const now = new Date();

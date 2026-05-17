@@ -1,7 +1,7 @@
-import { useCallback, useState, useMemo } from 'react';
+import { useCallback, useState, useMemo, useRef, useEffect } from 'react';
 import {
   StyleSheet, View, Text, ScrollView, Pressable, FlatList,
-  Modal, TextInput,
+  Modal, TextInput, Image, Animated,
 } from 'react-native';
 import { useFocusEffect, router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -12,6 +12,7 @@ import {
 } from '@/lib/visits';
 import {
   getAllStacks, createStack, deleteStack, StackSummary,
+  TierKey, TIER_ORDER, TIER_CONFIG, stackTier,
 } from '@/lib/stacks';
 import { useSelectionMode } from '@/lib/useSelectionMode';
 import { ProfileAvatar } from '@/components/ProfileAvatar';
@@ -32,73 +33,193 @@ function autoStackName(): string {
   return now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' Date';
 }
 
-// ─── Name Stack Modal ─────────────────────────────────────────────────────────
+// ─── Create Stack Modal (2-step: Name → Tier + Note) ─────────────────────────
 
-function NameStackModal({ visitIds, onConfirm, onCancel }: {
+function CreateStackModal({ visitIds, onConfirm, onCancel }: {
   visitIds: string[];
-  onConfirm: (name: string) => void;
+  onConfirm: (name: string, tier: TierKey, note: string) => void;
   onCancel: () => void;
 }) {
-  const [name, setName] = useState(autoStackName());
+  const [step, setStep] = useState<'name' | 'tier'>('name');
+  const [name, setName] = useState('');
+  const [tier, setTier] = useState<TierKey | null>(null);
+  const [note, setNote] = useState('');
+
+  const canConfirm = tier !== null;
 
   return (
     <Modal visible animationType="slide" presentationStyle="formSheet" transparent>
       <Pressable style={ns.backdrop} onPress={onCancel}>
         <Pressable style={ns.sheet} onPress={() => {}}>
           <View style={ns.handle} />
-          <Text style={ns.title}>Name this stack</Text>
-          <Text style={ns.subtitle}>{visitIds.length} spots selected</Text>
-          <TextInput
-            style={ns.input}
-            value={name}
-            onChangeText={setName}
-            placeholder="e.g. Saturday Night Out"
-            placeholderTextColor={T.placeholder}
-            autoFocus
-            returnKeyType="done"
-            onSubmitEditing={() => name.trim() && onConfirm(name.trim())}
-          />
-          <Pressable
-            style={[ns.confirmBtn, !name.trim() && ns.confirmBtnDisabled]}
-            onPress={() => name.trim() && onConfirm(name.trim())}
-            disabled={!name.trim()}
-          >
-            <Text style={[ns.confirmBtnText, !name.trim() && ns.confirmBtnTextDisabled]}>
-              Create Stack
-            </Text>
-          </Pressable>
-          <Pressable style={ns.cancelBtn} onPress={onCancel}>
-            <Text style={ns.cancelBtnText}>Cancel</Text>
-          </Pressable>
+
+          {step === 'name' ? (
+            <>
+              <Text style={ns.title}>Name this stack</Text>
+              <Text style={ns.subtitle}>{visitIds.length} spots selected</Text>
+              <TextInput
+                style={ns.input}
+                value={name}
+                onChangeText={setName}
+                placeholder="e.g. Saturday Night Out"
+                placeholderTextColor={T.placeholder}
+                autoFocus
+                returnKeyType="done"
+                onSubmitEditing={() => name.trim() && setStep('tier')}
+              />
+              <Pressable
+                style={[ns.confirmBtn, !name.trim() && ns.confirmBtnDisabled]}
+                onPress={() => name.trim() && setStep('tier')}
+                disabled={!name.trim()}
+              >
+                <Text style={[ns.confirmBtnText, !name.trim() && ns.confirmBtnTextDisabled]}>
+                  Next →
+                </Text>
+              </Pressable>
+              <Pressable style={ns.cancelBtn} onPress={onCancel}>
+                <Text style={ns.cancelBtnText}>Cancel</Text>
+              </Pressable>
+            </>
+          ) : (
+            <>
+              <Pressable style={ns.backRow} onPress={() => setStep('name')}>
+                <Ionicons name="chevron-back" size={16} color={T.muted} />
+                <Text style={ns.backText}>Back</Text>
+              </Pressable>
+              <Text style={ns.title}>Place "{name}"</Text>
+              <Text style={ns.subtitle}>Which tier does this date night deserve?</Text>
+
+              <View style={ns.tierRow}>
+                {TIER_ORDER.map(t => {
+                  const cfg = TIER_CONFIG[t];
+                  const selected = tier === t;
+                  return (
+                    <Pressable
+                      key={t}
+                      style={[ns.tierBtn, selected && ns.tierBtnSelected, { borderColor: selected ? cfg.bg : T.border }]}
+                      onPress={() => setTier(t)}
+                    >
+                      <View style={[ns.tierBadge, { backgroundColor: cfg.bg }]}>
+                        <Text style={ns.tierBadgeText}>{t}</Text>
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              <TextInput
+                style={ns.noteInput}
+                value={note}
+                onChangeText={setNote}
+                placeholder="Why this tier? (optional)"
+                placeholderTextColor={T.placeholder}
+                returnKeyType="done"
+                multiline
+              />
+
+              <Pressable
+                style={[ns.confirmBtn, !canConfirm && ns.confirmBtnDisabled]}
+                onPress={() => canConfirm && onConfirm(name.trim(), tier!, note)}
+                disabled={!canConfirm}
+              >
+                <Text style={[ns.confirmBtnText, !canConfirm && ns.confirmBtnTextDisabled]}>
+                  Create Stack
+                </Text>
+              </Pressable>
+            </>
+          )}
         </Pressable>
       </Pressable>
     </Modal>
   );
 }
 
-// ─── Stack Card ───────────────────────────────────────────────────────────────
+// ─── Tier Fly-in Animation Overlay ───────────────────────────────────────────
 
-function StackCard({ stack }: { stack: StackSummary }) {
+function TierFlyOverlay({ tier, onDone }: { tier: TierKey; onDone: () => void }) {
+  const cfg = TIER_CONFIG[tier];
+  const scale = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(0)).current;
+  const opacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.sequence([
+      Animated.parallel([
+        Animated.spring(scale, { toValue: 1, useNativeDriver: true, damping: 12, stiffness: 180 }),
+        Animated.timing(opacity, { toValue: 1, duration: 180, useNativeDriver: true }),
+      ]),
+      Animated.delay(380),
+      Animated.parallel([
+        Animated.timing(translateY, { toValue: -260, duration: 420, useNativeDriver: true }),
+        Animated.timing(scale, { toValue: 0.35, duration: 420, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0, duration: 380, useNativeDriver: true }),
+      ]),
+    ]).start(onDone);
+  }, []);
+
   return (
-    <Pressable
-      style={({ pressed }) => [sc.card, pressed && { opacity: 0.7 }]}
-      onPress={() => router.push(`/stack/${stack.id}` as any)}
-      accessibilityRole="button"
-      accessibilityLabel={`${stack.name}, ${stack.spot_count} spots`}
-    >
-      <View style={sc.cardTop}>
-        <Text style={sc.cardName} numberOfLines={1}>{stack.name}</Text>
-        <View style={sc.spotBadge}>
-          <Text style={sc.spotBadgeText}>{stack.spot_count}</Text>
+    <View style={fly.overlay} pointerEvents="none">
+      <Animated.View style={[fly.content, { transform: [{ scale }, { translateY }], opacity }]}>
+        <View style={[fly.badge, { backgroundColor: cfg.bg }]}>
+          <Text style={fly.badgeText}>{tier}</Text>
         </View>
+        <Text style={fly.label}>Added to {tier} Tier</Text>
+      </Animated.View>
+    </View>
+  );
+}
+
+// ─── Tier Row ─────────────────────────────────────────────────────────────────
+
+function TierRow({ tier, stacks, bounce }: { tier: TierKey; stacks: StackSummary[]; bounce?: boolean }) {
+  const cfg = TIER_CONFIG[tier];
+  const photos = stacks
+    .map(s => s.cover_photo)
+    .filter((p): p is string => !!p);
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (!bounce) return;
+    Animated.sequence([
+      Animated.spring(scaleAnim, { toValue: 1.06, useNativeDriver: true, damping: 6, stiffness: 300 }),
+      Animated.spring(scaleAnim, { toValue: 1, useNativeDriver: true, damping: 10, stiffness: 200 }),
+    ]).start();
+  }, [bounce]);
+
+  return (
+    <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
+    <Pressable
+      style={({ pressed }) => [tc.row, pressed && { opacity: 0.75 }]}
+      onPress={() => router.push(`/tier/${tier}` as any)}
+      accessibilityRole="button"
+      accessibilityLabel={`${tier} tier, ${stacks.length} stacks`}
+    >
+      {/* Colour wash */}
+      <View style={[tc.wash, { backgroundColor: cfg.bg }]} />
+
+      {/* Left: badge + count */}
+      <View style={tc.badgeWrap}>
+        <View style={[tc.badge, { backgroundColor: cfg.bg }]}>
+          <Text style={[tc.badgeText, { color: cfg.text }]}>{tier}</Text>
+        </View>
+        <Text style={tc.stackCount}>
+          {stacks.length} {stacks.length === 1 ? 'Stack' : 'Stacks'}
+        </Text>
       </View>
 
-      {stack.first_spot && stack.last_spot && stack.first_spot !== stack.last_spot && (
-        <Text style={sc.journey} numberOfLines={1}>
-          {stack.first_spot} → {stack.last_spot}
-        </Text>
-      )}
+      {/* Divider */}
+      <View style={tc.divider} />
+
+      {/* Right: photos top-left, chevron far right */}
+      <View style={tc.photoArea}>
+        {photos.map((uri, i) => (
+          <Image key={i} source={{ uri }} style={tc.photo} resizeMode="cover" />
+        ))}
+      </View>
+
+      <Ionicons name="chevron-forward" size={14} color={T.muted} style={tc.chevron} />
     </Pressable>
+    </Animated.View>
   );
 }
 
@@ -164,6 +285,8 @@ export default function RankedScreen() {
   const [category, setCategory] = useState<CategoryFilter>(null);
   const [search, setSearch] = useState('');
   const [naming, setNaming] = useState(false);
+  const [flyTier, setFlyTier] = useState<TierKey | null>(null);
+  const [bounceTier, setBounceTier] = useState<TierKey | null>(null);
 
   const { selectionMode, selectedIds, enter, exit, toggle, canStack } = useSelectionMode();
 
@@ -186,6 +309,14 @@ export default function RankedScreen() {
     categoryCounts[v.activity_type] = (categoryCounts[v.activity_type] ?? 0) + 1;
   }
 
+  const stacksByTier = useMemo(() => {
+    const groups: Record<TierKey, StackSummary[]> = { S: [], A: [], B: [], C: [], F: [] };
+    for (const stack of stacks) {
+      groups[stackTier(stack)].push(stack);
+    }
+    return groups;
+  }, [stacks]);
+
   const filtered = useMemo(() => {
     let list = category ? visits.filter(v => v.activity_type === category) : visits;
     if (search.trim()) {
@@ -199,13 +330,13 @@ export default function RankedScreen() {
   }, [visits, category, search]);
   const sorted = sortVisits(filtered, sort);
 
-  function handleStackConfirm(name: string) {
+  function handleStackConfirm(name: string, tier: TierKey, note: string) {
     const visitIds = Array.from(selectedIds);
-    createStack(name, visitIds);
+    createStack(name, visitIds, tier, note);
     setNaming(false);
     exit();
     setStacks(getAllStacks());
-    setActiveTab('date-nights');
+    setFlyTier(tier);
   }
 
   function handleNewStackFromDateNights() {
@@ -397,8 +528,11 @@ export default function RankedScreen() {
             </Pressable>
           </View>
 
-          {stacks.length === 0 ? (
-            <View style={s.empty}>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={s.listContent}
+          >
+            {stacks.length === 0 && (
               <View style={s.emptyInvite}>
                 <Ionicons name="layers-outline" size={36} color={T.muted} style={{ marginBottom: 12 }} />
                 <Text style={s.emptyTitle}>No stacks yet</Text>
@@ -409,26 +543,35 @@ export default function RankedScreen() {
                   <Text style={s.tryItBtnText}>Try it</Text>
                 </Pressable>
               </View>
-            </View>
-          ) : (
-            <FlatList
-              data={stacks}
-              keyExtractor={s => s.id}
-              renderItem={({ item }) => (
-                <StackCard stack={item} />
-              )}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={s.listContent}
-            />
-          )}
+            )}
+            {TIER_ORDER.map(tier => (
+              <TierRow
+                key={tier}
+                tier={tier}
+                stacks={stacksByTier[tier]}
+                bounce={bounceTier === tier}
+              />
+            ))}
+          </ScrollView>
         </View>
       )}
 
       {naming && (
-        <NameStackModal
+        <CreateStackModal
           visitIds={Array.from(selectedIds)}
           onConfirm={handleStackConfirm}
           onCancel={() => setNaming(false)}
+        />
+      )}
+      {flyTier && (
+        <TierFlyOverlay
+          tier={flyTier}
+          onDone={() => {
+            setFlyTier(null);
+            setActiveTab('date-nights');
+            setBounceTier(flyTier);
+            setTimeout(() => setBounceTier(null), 800);
+          }}
         />
       )}
     </SafeAreaView>
@@ -670,25 +813,88 @@ const s = StyleSheet.create({
   plusCircleText: { color: '#fff', fontSize: 14, fontWeight: '700', lineHeight: 14, includeFontPadding: false },
 });
 
-const sc = StyleSheet.create({
-  card: {
+const tc = StyleSheet.create({
+  row: {
     marginHorizontal: 16,
-    marginVertical: 6,
+    marginVertical: 4,
     backgroundColor: T.card,
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: T.border,
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    overflow: 'hidden',
+    height: 96,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
     shadowRadius: 8,
   },
-  cardTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
-  cardName: { fontSize: 16, fontWeight: '700', color: T.primary, fontFamily: 'InstrumentSerif-Regular', flex: 1, marginRight: 10 },
-  spotBadge: { backgroundColor: T.inputBg, borderRadius: 12, paddingHorizontal: 9, paddingVertical: 3 },
-  spotBadgeText: { fontSize: 12, fontWeight: '700', color: T.muted },
-  journey: { fontSize: 13, color: T.muted, fontStyle: 'italic' },
+  wash: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    opacity: 0.07,
+  },
+  badgeWrap: {
+    width: 88,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    zIndex: 1,
+  },
+  badge: {
+    width: 52,
+    height: 52,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+  },
+  badgeText: {
+    fontSize: 24,
+    fontWeight: '800',
+    letterSpacing: -1,
+  },
+  stackCount: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: T.muted,
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+  },
+  divider: {
+    width: StyleSheet.hairlineWidth,
+    alignSelf: 'stretch',
+    backgroundColor: T.border,
+    marginVertical: 14,
+    zIndex: 1,
+  },
+  photoArea: {
+    flex: 1,
+    flexDirection: 'row',
+    flexWrap: 'nowrap',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingTop: 12,
+    alignItems: 'flex-start',
+    overflow: 'hidden',
+    zIndex: 1,
+  },
+  photo: {
+    width: 30,
+    height: 30,
+    borderRadius: 7,
+    backgroundColor: T.inputBg,
+    flexShrink: 0,
+  },
+  chevron: {
+    alignSelf: 'center',
+    paddingRight: 14,
+    zIndex: 1,
+  },
 });
 
 const ns = StyleSheet.create({
@@ -728,4 +934,71 @@ const ns = StyleSheet.create({
   confirmBtnTextDisabled: { color: T.muted },
   cancelBtn: { alignItems: 'center', paddingVertical: 12 },
   cancelBtnText: { fontSize: 15, color: T.muted, fontWeight: '500' },
+  // Tier step
+  backRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    marginBottom: 16, alignSelf: 'flex-start',
+  },
+  backText: { fontSize: 14, color: T.muted, fontWeight: '500' },
+  tierRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+    gap: 8,
+  },
+  tierBtn: {
+    flex: 1,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: T.border,
+    alignItems: 'center',
+    paddingVertical: 10,
+    backgroundColor: T.card,
+  },
+  tierBtnSelected: {
+    backgroundColor: T.card,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+  },
+  tierBadge: {
+    width: 40, height: 40, borderRadius: 11,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  tierBadgeText: { fontSize: 18, fontWeight: '800', color: '#fff', letterSpacing: -0.5 },
+  noteInput: {
+    backgroundColor: T.inputBg, borderRadius: 14,
+    paddingHorizontal: 16, paddingVertical: 14,
+    fontSize: 14, color: T.primary,
+    marginBottom: 16, minHeight: 70,
+    textAlignVertical: 'top',
+  },
+});
+
+const fly = StyleSheet.create({
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    pointerEvents: 'none',
+    zIndex: 999,
+  },
+  content: { alignItems: 'center', gap: 12 },
+  badge: {
+    width: 90, height: 90, borderRadius: 24,
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25, shadowRadius: 16,
+  },
+  badgeText: { fontSize: 44, fontWeight: '800', color: '#fff', letterSpacing: -2 },
+  label: {
+    fontSize: 17, fontWeight: '700', color: T.primary,
+    fontFamily: 'InstrumentSerif-Regular',
+    backgroundColor: T.card,
+    paddingHorizontal: 18, paddingVertical: 8,
+    borderRadius: 20, overflow: 'hidden',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08, shadowRadius: 8,
+  },
 });

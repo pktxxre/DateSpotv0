@@ -1,17 +1,47 @@
 import { getDb } from './db';
 
+// ─── Tier System ──────────────────────────────────────────────────────────────
+
+export type TierKey = 'S' | 'A' | 'B' | 'C' | 'F';
+
+export const TIER_ORDER: TierKey[] = ['S', 'A', 'B', 'C', 'F'];
+
+export const TIER_CONFIG: Record<TierKey, { bg: string; text: string; minRating: number }> = {
+  S: { bg: '#22C55E', text: '#fff', minRating: 8.0 },
+  A: { bg: '#84CC16', text: '#fff', minRating: 6.5 },
+  B: { bg: '#EAB308', text: '#fff', minRating: 5.0 },
+  C: { bg: '#F97316', text: '#fff', minRating: 3.5 },
+  F: { bg: '#EF4444', text: '#fff', minRating: 0 },
+};
+
+export function stackTier(stack: { tier?: TierKey | null; rating: number }): TierKey {
+  if (stack.tier) return stack.tier;
+  // Fallback: derive from average rating for stacks created before explicit tier selection
+  const r = stack.rating;
+  if (r >= 8.0) return 'S';
+  if (r >= 6.5) return 'A';
+  if (r >= 5.0) return 'B';
+  if (r >= 3.5) return 'C';
+  return 'F';
+}
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
 export interface Stack {
   id: string;
   name: string;
   rating: number;
   rank_order: number;
   created_at: string;
+  tier: TierKey | null;
+  tier_note: string | null;
 }
 
 export interface StackSummary extends Stack {
   spot_count: number;
   first_spot: string | null;
   last_spot: string | null;
+  cover_photo: string | null;
 }
 
 export interface StackVisitRow {
@@ -29,15 +59,20 @@ export interface StackDetail extends Stack {
   visits: StackVisitRow[];
 }
 
-export function createStack(name: string, visitIds: string[]): Stack {
+export function createStack(
+  name: string,
+  visitIds: string[],
+  tier: TierKey,
+  tierNote: string = ''
+): Stack {
   const db = getDb();
   const id = `stack_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
   const now = new Date().toISOString();
 
   db.withTransactionSync(() => {
     db.runSync(
-      `INSERT INTO stacks (id, name, rating, rank_order, created_at) VALUES (?, ?, 0, 0, ?)`,
-      [id, name, now]
+      `INSERT INTO stacks (id, name, rating, rank_order, created_at, tier, tier_note) VALUES (?, ?, 0, 0, ?, ?, ?)`,
+      [id, name, now, tier, tierNote.trim() || null]
     );
     visitIds.forEach((visitId, position) => {
       db.runSync(
@@ -53,20 +88,35 @@ export function createStack(name: string, visitIds: string[]): Stack {
 
 export function getAllStacks(): StackSummary[] {
   const db = getDb();
-  return db.getAllSync<StackSummary>(`
+  const rows = db.getAllSync<Omit<StackSummary, 'cover_photo'> & { cover_photo_raw: string | null }>(`
     SELECT
-      s.id, s.name, s.rating, s.rank_order, s.created_at,
+      s.id, s.name, s.rating, s.rank_order, s.created_at, s.tier, s.tier_note,
       COUNT(sv.visit_id) AS spot_count,
       MIN(CASE WHEN sv.position = 0 THEN v.venue_name END) AS first_spot,
       MAX(CASE WHEN sv.position = (
         SELECT MAX(position) FROM stack_visits WHERE stack_id = s.id
-      ) THEN v.venue_name END) AS last_spot
+      ) THEN v.venue_name END) AS last_spot,
+      (SELECT v2.photos FROM stack_visits sv2
+       JOIN visits v2 ON v2.id = sv2.visit_id
+       WHERE sv2.stack_id = s.id AND v2.photos IS NOT NULL AND v2.photos != '[]'
+       ORDER BY sv2.position LIMIT 1) AS cover_photo_raw
     FROM stacks s
     LEFT JOIN stack_visits sv ON sv.stack_id = s.id
     LEFT JOIN visits v ON v.id = sv.visit_id
     GROUP BY s.id
     ORDER BY s.rank_order DESC, s.created_at DESC
   `);
+  return rows.map(r => {
+    let cover_photo: string | null = null;
+    if (r.cover_photo_raw) {
+      try {
+        const arr = JSON.parse(r.cover_photo_raw);
+        cover_photo = Array.isArray(arr) && arr.length > 0 ? arr[0] : null;
+      } catch { /* ignore */ }
+    }
+    const { cover_photo_raw, ...rest } = r;
+    return { ...rest, cover_photo };
+  });
 }
 
 export function getStackById(id: string): Stack | null {
