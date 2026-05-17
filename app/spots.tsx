@@ -6,7 +6,7 @@ import {
 import { Stack, router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { getSeedSpots, SeedSpot } from '@/lib/seeds';
+import { getSeedSpotsRaw, SeedSpot } from '@/lib/seeds';
 import { ACTIVITY_TYPES, PRICE_LABELS, ratingColor, formatRating, Price } from '@/lib/visits';
 import { T } from '@/lib/theme';
 
@@ -37,8 +37,19 @@ export default function SpotsScreen() {
   const [priceFilter, setPriceFilter] = useState<PriceFilter>(null);
 
   useEffect(() => {
-    getSeedSpots().then(data => {
-      setSeeds(data);
+    getSeedSpotsRaw().then(data => {
+      // Cap at top 50 per category by rating
+      const byCategory = new Map<string, SeedSpot[]>();
+      for (const spot of data) {
+        if (!byCategory.has(spot.activity_type)) byCategory.set(spot.activity_type, []);
+        byCategory.get(spot.activity_type)!.push(spot);
+      }
+      const capped: SeedSpot[] = [];
+      for (const spots of byCategory.values()) {
+        const sorted = [...spots].sort((a, b) => b.rating - a.rating);
+        capped.push(...sorted.slice(0, 50));
+      }
+      setSeeds(capped);
       setLoading(false);
     });
   }, []);
@@ -148,18 +159,21 @@ export default function SpotsScreen() {
               const accentColor = ACTIVITY_COLORS[item.activity_type] ?? ACTIVITY_COLORS.other;
               const priceLabel = PRICE_LABELS[item.price as Price] ?? '';
               const catLabel = CATEGORY_LABELS[item.activity_type] ?? item.activity_type;
-              const meta = [catLabel, priceLabel, 'Seattle'].filter(Boolean).join(' · ');
+              const restMeta = [priceLabel, 'Seattle'].filter(Boolean).join(' · ');
 
               return (
                 <Pressable
                   style={({ pressed }) => [s.spotRow, pressed && { opacity: 0.7 }]}
                   onPress={() => router.push(`/spot/${item.id}` as any)}
                 >
-                  <View style={[s.accentBar, { backgroundColor: accentColor }]} />
+                  <View style={[s.accentBar, { backgroundColor: color }]} />
                   <Text style={s.spotRank}>{index + 1}</Text>
                   <View style={s.spotInfo}>
                     <Text style={s.spotName}>{item.venue_name}</Text>
-                    <Text style={s.spotMeta}>{meta}</Text>
+                    <Text style={s.spotMeta}>
+                      <Text style={{ color: accentColor }}>{catLabel}</Text>
+                      {restMeta ? <Text>{' · ' + restMeta}</Text> : null}
+                    </Text>
                   </View>
                   <View style={[s.ratingPill, { borderColor: color }]}>
                     <Text style={[s.ratingPillText, { color }]}>{item.rating.toFixed(1)}</Text>
@@ -261,11 +275,11 @@ const s = StyleSheet.create({
     minHeight: 36,
   },
   spotRank: {
-    width: 24,
-    fontSize: 13,
+    width: 32,
+    fontSize: 12,
     fontWeight: '500',
     color: T.muted,
-    marginRight: 8,
+    marginRight: 10,
   },
   spotInfo: { flex: 1, marginRight: 10 },
   spotName: { fontSize: 15, fontWeight: '600', color: T.primary, marginBottom: 2 },

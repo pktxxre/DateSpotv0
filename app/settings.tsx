@@ -58,8 +58,7 @@ export default function SettingsScreen() {
         {
           text: 'Delete', style: 'destructive', onPress: async () => {
             try {
-              // Delete account from Supabase auth (requires delete_user() SQL function)
-              const { error } = await supabase!.rpc('delete_user');
+              const { error } = await supabase?.rpc('delete_user') ?? {};
               if (error) throw error;
             } catch (e) {
               // If RPC fails, still clear local data and sign out
