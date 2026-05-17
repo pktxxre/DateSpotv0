@@ -24,8 +24,9 @@ export default function SignupScreen() {
       return;
     }
 
+    if (!supabase) { Alert.alert('Configuration Error', 'App is not configured. Please contact support.'); return; }
     setLoading(true);
-    const { error: signUpError } = await supabase!.auth.signUp({
+    const { error: signUpError } = await supabase.auth.signUp({
       email: email.trim(),
       password,
     });
@@ -40,7 +41,7 @@ export default function SignupScreen() {
     await saveProfile({ username: '' });
 
     // Sign in immediately after account creation (requires email confirmation disabled in Supabase dashboard)
-    const { error: signInError } = await supabase!.auth.signInWithPassword({
+    const { error: signInError } = await supabase.auth.signInWithPassword({
       email: email.trim(),
       password,
     });

@@ -128,6 +128,7 @@ export default function OnboardingFlow() {
   }
 
   async function handleSignup() {
+    if (!supabase) { Alert.alert('Configuration Error', 'App is not configured. Please contact support.'); return; }
     if (!email.trim() || !password.trim()) {
       Alert.alert('Missing fields', 'Please enter your email and a password.');
       return;
@@ -151,6 +152,7 @@ export default function OnboardingFlow() {
   }
 
   async function handleVerifyEmail() {
+    if (!supabase) { Alert.alert('Configuration Error', 'App is not configured. Please contact support.'); return; }
     if (otp.length < 8) return;
     setLoading(true);
     const { error } = await supabase!.auth.verifyOtp({
@@ -164,6 +166,7 @@ export default function OnboardingFlow() {
   }
 
   async function handleLogin() {
+    if (!supabase) { Alert.alert('Configuration Error', 'App is not configured. Please contact support.'); return; }
     if (!email.trim() || !password.trim()) {
       Alert.alert('Missing fields', 'Please enter your email and password.');
       return;

@@ -18,13 +18,14 @@ import {
   currentComparison, ComparisonState,
 } from '@/lib/ranking';
 import { uploadPhoto } from '@/lib/storage';
-import { getSeedSpotById, SeedSpot } from '@/lib/seeds';
+import { getSeedSpotById, getSeedSpotsRaw, SeedSpot } from '@/lib/seeds';
+import { supabase } from '@/lib/supabase';
 import { getAllFutureSpots, insertFutureSpot, deleteFutureSpot } from '@/lib/future';
 import { scheduleOpenLogWithLocation } from '@/app/(tabs)/map';
 import * as Crypto from 'expo-crypto';
 import { T } from '@/lib/theme';
 
-const { width: SCREEN_W } = Dimensions.get('window');
+const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 const H_PAD = 20;
 const PHOTO_COLS = 3;
 const PHOTO_GAP = 1;
@@ -421,6 +422,9 @@ const ACTIVITY_COLORS_SD: Record<string, string> = {
 
 function SeedSpotDetail({ spot }: { spot: SeedSpot }) {
   const [savedFutureId, setSavedFutureId] = useState<string | null>(null);
+  const [spotPhotos, setSpotPhotos] = useState<string[]>([]);
+  const [spotRank, setSpotRank] = useState<number | null>(null);
+  const [ratingExpanded, setRatingExpanded] = useState(false);
   const bannerAnim = useRef(new Animated.Value(0)).current;
   const bannerTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const info = ACTIVITY_TYPES.find(a => a.value === spot.activity_type);
@@ -429,13 +433,39 @@ function SeedSpotDetail({ spot }: { spot: SeedSpot }) {
   const heroBg = ACTIVITY_COLORS_SD[spot.activity_type] ?? ACTIVITY_COLORS_SD.other;
   const catLabel = info?.label ?? spot.activity_type;
 
-  // Check if already saved on mount
   useEffect(() => {
     const existing = getAllFutureSpots().find(
       f => f.venue_name === spot.venue_name && Math.abs(f.lat - spot.lat) < 0.001
     );
     setSavedFutureId(existing?.id ?? null);
   }, [spot.id]);
+
+  // Determine this spot's overall rank (by rating) to gate Editor's Pick
+  useEffect(() => {
+    getSeedSpotsRaw().then(all => {
+      const sorted = [...all].sort((a, b) => b.rating - a.rating);
+      const idx = sorted.findIndex(s => s.venue_name === spot.venue_name);
+      setSpotRank(idx >= 0 ? idx + 1 : null);
+    });
+  }, [spot.venue_name]);
+
+  // Fetch any user-uploaded photos for this venue
+  useEffect(() => {
+    if (!supabase) return;
+    supabase
+      .from('visits')
+      .select('photos')
+      .ilike('venue_name', spot.venue_name)
+      .not('photos', 'is', null)
+      .then(({ data }) => {
+        if (!data) return;
+        const all: string[] = [];
+        for (const row of data) {
+          if (Array.isArray(row.photos)) all.push(...(row.photos as string[]));
+        }
+        setSpotPhotos(all);
+      });
+  }, [spot.venue_name]);
 
   function showSavedBanner() {
     if (bannerTimer.current) clearTimeout(bannerTimer.current);
@@ -468,11 +498,13 @@ function SeedSpotDetail({ spot }: { spot: SeedSpot }) {
     router.push('/(tabs)/map');
   }
 
+  const isEditorsPick = spotRank !== null && spotRank <= 10;
+
   return (
     <View style={{ flex: 1, backgroundColor: '#FCF9F2' }}>
       <Stack.Screen options={{ headerShown: false }} />
 
-      {/* Floating header buttons — absolutely positioned on top of everything */}
+      {/* Floating header over hero */}
       <SafeAreaView style={sd.floatingHeader} edges={['top']}>
         <View style={sd.floatingHeaderInner}>
           <Pressable onPress={() => router.back()} hitSlop={12} style={sd.floatingBtn}>
@@ -503,31 +535,39 @@ function SeedSpotDetail({ spot }: { spot: SeedSpot }) {
         <Text style={sd.savedBannerText}>Saved! Check it out on your map.</Text>
       </Animated.View>
 
-      <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Full-bleed colored hero */}
-        <View style={[sd.hero, { backgroundColor: heroBg }]}>
-          <View style={sd.heroContent}>
-            <Text style={sd.heroMeta}>
-              {catLabel.toUpperCase()}{priceLabel ? ` · ${priceLabel}` : ''}
-            </Text>
-            <Text style={sd.heroName}>{spot.venue_name}</Text>
-            <Text style={sd.heroCity}>Seattle</Text>
-          </View>
-        </View>
-
-        {/* White card overlapping hero */}
-        <View style={sd.whiteCard}>
-          {/* Badge row */}
-          <View style={sd.badgeRow}>
-            <View style={sd.editorBadge}>
-              <Ionicons name="star" size={11} color="#E76F51" style={{ marginRight: 4 }} />
-              <Text style={sd.editorBadgeText}>EDITOR'S PICK</Text>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ flexGrow: 1 }}>
+        {/* Wrapper shares hero color so rounded card corners show against it */}
+        <View style={{ backgroundColor: heroBg }}>
+          {/* Colored hero — content pinned right under the floating header */}
+          <View style={sd.hero}>
+            <View style={sd.heroContent}>
+              <Text style={sd.heroMeta}>
+                {catLabel.toUpperCase()}{priceLabel ? ` · ${priceLabel}` : ''}
+              </Text>
+              <Text style={sd.heroName}>{spot.venue_name}</Text>
+              <Text style={sd.heroCity}>Seattle</Text>
             </View>
-            <View style={sd.ratingWrap}>
-              <View style={[sd.ratingBadge, { borderColor: color }]}>
-                <Text style={[sd.ratingBadgeText, { color }]}>{spot.rating.toFixed(1)}</Text>
+          </View>
+
+          {/* White card inside wrapper — rounded corners visible against heroBg */}
+          <View style={sd.whiteCard}>
+          {/* Badge row + rating */}
+          <View style={sd.badgeRow}>
+            {isEditorsPick ? (
+              <View style={sd.editorBadge}>
+                <Ionicons name="star" size={11} color="#E76F51" style={{ marginRight: 4 }} />
+                <Text style={sd.editorBadgeText}>EDITOR'S PICK</Text>
               </View>
-              <Text style={sd.ratingCaption}>Avg. of all logs</Text>
+            ) : <View />}
+            <View style={sd.ratingWrap}>
+              <Pressable onPress={() => setRatingExpanded(v => !v)}>
+                <View style={[sd.ratingBadge, { borderColor: color }]}>
+                  <Text style={[sd.ratingBadgeText, { color }]}>{spot.rating.toFixed(1)}</Text>
+                </View>
+              </Pressable>
+              {ratingExpanded && (
+                <Text style={sd.ratingCaption}>Avg. of all logs</Text>
+              )}
             </View>
           </View>
 
@@ -542,7 +582,7 @@ function SeedSpotDetail({ spot }: { spot: SeedSpot }) {
             </>
           ) : null}
 
-          {/* Where it is */}
+          {/* Map */}
           <Text style={sd.sectionLabel}>WHERE IT IS</Text>
           <View style={sd.mapWrap}>
             <MapView
@@ -560,10 +600,46 @@ function SeedSpotDetail({ spot }: { spot: SeedSpot }) {
             </MapView>
           </View>
 
+          {spot.address ? (
+            <Text style={sd.addressText}>{spot.address}</Text>
+          ) : null}
+
+          {/* Divider */}
+          <View style={sd.divider} />
+
+          {/* Photos section — always visible */}
+          <Text style={sd.sectionLabel}>PHOTOS</Text>
+          {spotPhotos.length > 0 ? (
+            <View style={sd.photosGrid}>
+              {spotPhotos.map((uri, idx) => (
+                <Image key={idx} source={{ uri }} style={sd.photoThumb} resizeMode="cover" />
+              ))}
+            </View>
+          ) : (
+            <View style={sd.emptySection}>
+              <Ionicons name="camera-outline" size={28} color={T.border} />
+              <Text style={sd.emptySectionText}>No photos yet</Text>
+            </View>
+          )}
+
+          {/* Divider */}
+          <View style={sd.divider} />
+
+          {/* What your friends think — always visible */}
+          <Text style={sd.sectionLabel}>WHAT YOUR FRIENDS THINK</Text>
+          <View style={sd.emptySection}>
+            <Ionicons name="people-outline" size={28} color={T.border} />
+            <Text style={sd.emptySectionText}>None of your friends have logged this spot yet.</Text>
+            <Pressable style={sd.addFriendsBtn} onPress={() => router.push('/(tabs)/friends')}>
+              <Ionicons name="person-add-outline" size={14} color={T.accent} />
+              <Text style={sd.addFriendsBtnText}>Add friends</Text>
+            </Pressable>
+          </View>
+
           <View style={{ height: 40 }} />
         </View>
+        </View>{/* end heroBg wrapper */}
       </ScrollView>
-
     </View>
   );
 }
@@ -614,14 +690,12 @@ const sd = StyleSheet.create({
     color: '#5856d6',
   },
   hero: {
-    height: 280,
-    justifyContent: 'flex-end',
+    paddingTop: 96,
+    paddingBottom: 10,
   },
   heroContent: {
-    position: 'absolute',
-    bottom: 44,
-    left: 20,
-    right: 20,
+    paddingHorizontal: 20,
+    paddingTop: 20,
   },
   heroMeta: {
     fontSize: 11,
@@ -646,9 +720,9 @@ const sd = StyleSheet.create({
     backgroundColor: '#fff',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    marginTop: -24,
+    flex: 1,
     padding: 20,
-    minHeight: 400,
+    minHeight: SCREEN_H,
   },
   badgeRow: {
     flexDirection: 'row',
@@ -708,6 +782,55 @@ const sd = StyleSheet.create({
     borderRadius: 14,
     overflow: 'hidden',
     backgroundColor: '#e8e8ed',
+  },
+  addressText: {
+    fontSize: 13,
+    color: T.muted,
+    marginTop: 8,
+    paddingHorizontal: 2,
+  },
+  photosGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 1,
+  },
+  photoThumb: {
+    width: PHOTO_SIZE,
+    height: PHOTO_SIZE,
+    backgroundColor: '#f2f2f7',
+  },
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: T.border,
+    marginVertical: 20,
+  },
+  emptySection: {
+    alignItems: 'center',
+    paddingVertical: 24,
+    gap: 8,
+  },
+  emptySectionText: {
+    fontSize: 13,
+    color: T.muted,
+    textAlign: 'center',
+    lineHeight: 19,
+  },
+  addFriendsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 4,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: T.accent,
+    backgroundColor: T.accentTint,
+  },
+  addFriendsBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: T.accent,
   },
   ctaSafe: {
     backgroundColor: '#fff',
