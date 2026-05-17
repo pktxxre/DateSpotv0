@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, Pressable, Modal, Alert,
-  ScrollView, TextInput, FlatList,
+  ScrollView, TextInput, FlatList, Image,
 } from 'react-native';
 import { useLocalSearchParams, router, useFocusEffect, Stack } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -234,6 +234,7 @@ export default function StackDetailScreen() {
     : 0;
   const qualityColor = ratingColor(avgRating);
   const dateStr = friendlyDate(detail.created_at);
+  const allPhotos = detail.visits.flatMap(v => v.photos).filter(Boolean);
 
   function handleDelete() {
     Alert.alert(
@@ -290,6 +291,19 @@ export default function StackDetailScreen() {
             <Text style={s.journeyLine} numberOfLines={1}>
               {detail.visits[0].venue_name} → {detail.visits[detail.visits.length - 1].venue_name}
             </Text>
+          )}
+
+          {allPhotos.length > 0 && (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={s.photoStrip}
+              contentContainerStyle={s.photoStripContent}
+            >
+              {allPhotos.map((uri, i) => (
+                <Image key={i} source={{ uri }} style={s.photoThumb} />
+              ))}
+            </ScrollView>
           )}
         </View>
 
@@ -398,6 +412,21 @@ const s = StyleSheet.create({
     fontSize: 13,
     color: T.muted,
     fontStyle: 'italic',
+  },
+
+  photoStrip: {
+    marginTop: 16,
+    marginHorizontal: -20,
+  },
+  photoStripContent: {
+    paddingHorizontal: 20,
+    gap: 8,
+  },
+  photoThumb: {
+    width: 96,
+    height: 96,
+    borderRadius: 10,
+    backgroundColor: T.inputBg,
   },
 
   section: { paddingHorizontal: 20, marginTop: 24 },

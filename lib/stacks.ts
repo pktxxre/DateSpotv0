@@ -22,6 +22,7 @@ export interface StackVisitRow {
   rating: number;
   visited_at: string;
   position: number;
+  photos: string[];
 }
 
 export interface StackDetail extends Stack {
@@ -77,13 +78,17 @@ export function getStackDetail(id: string): StackDetail | null {
   const stack = getStackById(id);
   if (!stack) return null;
   const db = getDb();
-  const visits = db.getAllSync<StackVisitRow>(`
-    SELECT sv.visit_id, sv.position, v.venue_name, v.triage, v.activity_type, v.rating, v.visited_at
+  const rows = db.getAllSync<Omit<StackVisitRow, 'photos'> & { photos: string | null }>(`
+    SELECT sv.visit_id, sv.position, v.venue_name, v.triage, v.activity_type, v.rating, v.visited_at, v.photos
     FROM stack_visits sv
     JOIN visits v ON v.id = sv.visit_id
     WHERE sv.stack_id = ?
     ORDER BY sv.position ASC
   `, [id]);
+  const visits: StackVisitRow[] = rows.map(r => ({
+    ...r,
+    photos: r.photos ? JSON.parse(r.photos) : [],
+  }));
   return { ...stack, visits };
 }
 
