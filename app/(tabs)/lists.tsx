@@ -78,16 +78,13 @@ function NameStackModal({ visitIds, onConfirm, onCancel }: {
 
 // ─── Stack Card ───────────────────────────────────────────────────────────────
 
-function StackCard({ stack, onDelete }: { stack: StackSummary; onDelete: (id: string) => void }) {
-  const color = ratingColor(stack.rating);
-  const dateStr = friendlyDate(stack.created_at);
-
+function StackCard({ stack }: { stack: StackSummary }) {
   return (
     <Pressable
       style={({ pressed }) => [sc.card, pressed && { opacity: 0.7 }]}
       onPress={() => router.push(`/stack/${stack.id}` as any)}
       accessibilityRole="button"
-      accessibilityLabel={`${stack.name}, ${dateStr}, ${stack.spot_count} spots`}
+      accessibilityLabel={`${stack.name}, ${stack.spot_count} spots`}
     >
       <View style={sc.cardTop}>
         <Text style={sc.cardName} numberOfLines={1}>{stack.name}</Text>
@@ -96,30 +93,11 @@ function StackCard({ stack, onDelete }: { stack: StackSummary; onDelete: (id: st
         </View>
       </View>
 
-      <Text style={sc.cardDate}>{dateStr}</Text>
-
       {stack.first_spot && stack.last_spot && stack.first_spot !== stack.last_spot && (
         <Text style={sc.journey} numberOfLines={1}>
           {stack.first_spot} → {stack.last_spot}
         </Text>
       )}
-
-      <View style={sc.cardFooter}>
-        {stack.rating > 0 && (
-          <View style={[sc.qualityDot, { backgroundColor: color }]}>
-            <Text style={sc.qualityLabel}>{formatRating(stack.rating)}</Text>
-          </View>
-        )}
-        <View style={{ flex: 1 }} />
-        <Pressable
-          onPress={() => onDelete(stack.id)}
-          hitSlop={8}
-          style={sc.deleteBtn}
-          accessibilityLabel={`Delete ${stack.name}`}
-        >
-          <Ionicons name="trash-outline" size={16} color={T.muted} />
-        </Pressable>
-      </View>
     </Pressable>
   );
 }
@@ -228,13 +206,6 @@ export default function RankedScreen() {
     exit();
     setStacks(getAllStacks());
     setActiveTab('date-nights');
-  }
-
-  function handleDeleteStack(id: string) {
-    const target = stacks.find(s => s.id === id);
-    if (!target) return;
-    deleteStack(id);
-    setStacks(getAllStacks());
   }
 
   function handleNewStackFromDateNights() {
@@ -444,7 +415,7 @@ export default function RankedScreen() {
               data={stacks}
               keyExtractor={s => s.id}
               renderItem={({ item }) => (
-                <StackCard stack={item} onDelete={handleDeleteStack} />
+                <StackCard stack={item} />
               )}
               showsVerticalScrollIndicator={false}
               contentContainerStyle={s.listContent}
@@ -713,23 +684,18 @@ const sc = StyleSheet.create({
     shadowOpacity: 0.06,
     shadowRadius: 8,
   },
-  cardTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
+  cardTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
   cardName: { fontSize: 16, fontWeight: '700', color: T.primary, fontFamily: 'InstrumentSerif-Regular', flex: 1, marginRight: 10 },
   spotBadge: { backgroundColor: T.inputBg, borderRadius: 12, paddingHorizontal: 9, paddingVertical: 3 },
   spotBadgeText: { fontSize: 12, fontWeight: '700', color: T.muted },
-  cardDate: { fontSize: 12, color: T.muted, marginBottom: 6 },
-  journey: { fontSize: 13, color: T.muted, fontStyle: 'italic', marginBottom: 10 },
-  cardFooter: { flexDirection: 'row', alignItems: 'center' },
-  qualityDot: { flexDirection: 'row', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4 },
-  qualityLabel: { fontSize: 12, fontWeight: '700', color: '#fff' },
-  deleteBtn: { padding: 4, minWidth: 44, minHeight: 44, alignItems: 'flex-end', justifyContent: 'center' },
+  journey: { fontSize: 13, color: T.muted, fontStyle: 'italic' },
 });
 
 const ns = StyleSheet.create({
   backdrop: {
     flex: 1,
     justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    backgroundColor: 'transparent',
   },
   sheet: {
     backgroundColor: T.bg,

@@ -282,8 +282,8 @@ export default function StackDetailScreen() {
               <Text style={s.spotCountText}>{detail.visits.length} spot{detail.visits.length !== 1 ? 's' : ''}</Text>
             </View>
             {avgRating > 0 && (
-              <View style={[s.qualityDot, { backgroundColor: qualityColor }]}>
-                <Text style={s.qualityLabel}>{formatRating(avgRating)} avg</Text>
+              <View style={[s.qualityDot, { borderColor: qualityColor }]}>
+                <Text style={[s.qualityLabel, { color: qualityColor }]}>{formatRating(avgRating)} avg</Text>
               </View>
             )}
           </View>
@@ -391,8 +391,10 @@ const s = StyleSheet.create({
     borderRadius: 20,
     paddingHorizontal: 12,
     paddingVertical: 5,
+    borderWidth: 1.5,
+    backgroundColor: 'transparent',
   },
-  qualityLabel: { fontSize: 13, fontWeight: '700', color: '#fff' },
+  qualityLabel: { fontSize: 13, fontWeight: '700' },
 
   journeyLine: {
     fontSize: 13,
