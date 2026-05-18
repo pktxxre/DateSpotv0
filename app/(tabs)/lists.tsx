@@ -1,9 +1,9 @@
 import { useCallback, useState, useMemo, useRef, useEffect } from 'react';
 import {
   StyleSheet, View, Text, ScrollView, Pressable, FlatList,
-  Modal, TextInput, Image, Animated,
+  Modal, TextInput, Image, Animated, Dimensions, Easing,
 } from 'react-native';
-import { useFocusEffect, router } from 'expo-router';
+import { useFocusEffect, router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -42,10 +42,7 @@ function CreateStackModal({ visitIds, onConfirm, onCancel }: {
 }) {
   const [step, setStep] = useState<'name' | 'tier'>('name');
   const [name, setName] = useState('');
-  const [tier, setTier] = useState<TierKey | null>(null);
   const [note, setNote] = useState('');
-
-  const canConfirm = tier !== null;
 
   return (
     <Modal visible animationType="slide" presentationStyle="formSheet" transparent>
@@ -87,17 +84,16 @@ function CreateStackModal({ visitIds, onConfirm, onCancel }: {
                 <Text style={ns.backText}>Back</Text>
               </Pressable>
               <Text style={ns.title}>Place "{name}"</Text>
-              <Text style={ns.subtitle}>Which tier does this date night deserve?</Text>
+              <Text style={ns.subtitle}>Tap a tier to place this date night</Text>
 
               <View style={ns.tierRow}>
                 {TIER_ORDER.map(t => {
                   const cfg = TIER_CONFIG[t];
-                  const selected = tier === t;
                   return (
                     <Pressable
                       key={t}
-                      style={[ns.tierBtn, selected && ns.tierBtnSelected, { borderColor: selected ? cfg.bg : T.border }]}
-                      onPress={() => setTier(t)}
+                      style={[ns.tierBtn, { borderColor: T.border }]}
+                      onPress={() => onConfirm(name.trim(), t, note)}
                     >
                       <View style={[ns.tierBadge, { backgroundColor: cfg.bg }]}>
                         <Text style={ns.tierBadgeText}>{t}</Text>
@@ -116,16 +112,6 @@ function CreateStackModal({ visitIds, onConfirm, onCancel }: {
                 returnKeyType="done"
                 multiline
               />
-
-              <Pressable
-                style={[ns.confirmBtn, !canConfirm && ns.confirmBtnDisabled]}
-                onPress={() => canConfirm && onConfirm(name.trim(), tier!, note)}
-                disabled={!canConfirm}
-              >
-                <Text style={[ns.confirmBtnText, !canConfirm && ns.confirmBtnTextDisabled]}>
-                  Create Stack
-                </Text>
-              </Pressable>
             </>
           )}
         </Pressable>
@@ -134,24 +120,36 @@ function CreateStackModal({ visitIds, onConfirm, onCancel }: {
   );
 }
 
-// ─── Tier Fly-in Animation Overlay ───────────────────────────────────────────
+// ─── Stack Card Fly-in Animation ─────────────────────────────────────────────
 
-function TierFlyOverlay({ tier, onDone }: { tier: TierKey; onDone: () => void }) {
-  const cfg = TIER_CONFIG[tier];
+type FlyData = { tier: TierKey; name: string; spotCount: number; photoUrl: string | null };
+
+// Approximate Y centre of each tier row from top of screen (header ~80 + tabs ~50 + new-stack btn ~52 + rows ~72 each)
+const TIER_ROW_Y: Record<TierKey, number> = { S: 218, A: 290, B: 362, C: 434, F: 506 };
+
+function StackFlyAnimation({ data, onDone }: { data: FlyData; onDone: () => void }) {
+  const cfg = TIER_CONFIG[data.tier];
+  const { width, height } = Dimensions.get('window');
+  const centerY = height / 2;
+  const deltaY = TIER_ROW_Y[data.tier] - centerY;
+  const deltaX = -(width * 0.32);
+
   const scale = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(0)).current;
+  const translateX = useRef(new Animated.Value(0)).current;
   const opacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.sequence([
       Animated.parallel([
-        Animated.spring(scale, { toValue: 1, useNativeDriver: true, damping: 12, stiffness: 180 }),
+        Animated.spring(scale, { toValue: 1, useNativeDriver: true, damping: 14, stiffness: 200 }),
         Animated.timing(opacity, { toValue: 1, duration: 180, useNativeDriver: true }),
       ]),
-      Animated.delay(380),
+      Animated.delay(400),
       Animated.parallel([
-        Animated.timing(translateY, { toValue: -260, duration: 420, useNativeDriver: true }),
-        Animated.timing(scale, { toValue: 0.35, duration: 420, useNativeDriver: true }),
+        Animated.timing(scale, { toValue: 0, duration: 480, useNativeDriver: true, easing: Easing.in(Easing.quad) }),
+        Animated.timing(translateY, { toValue: deltaY, duration: 480, useNativeDriver: true, easing: Easing.in(Easing.quad) }),
+        Animated.timing(translateX, { toValue: deltaX, duration: 480, useNativeDriver: true, easing: Easing.in(Easing.quad) }),
         Animated.timing(opacity, { toValue: 0, duration: 380, useNativeDriver: true }),
       ]),
     ]).start(onDone);
@@ -159,11 +157,14 @@ function TierFlyOverlay({ tier, onDone }: { tier: TierKey; onDone: () => void })
 
   return (
     <View style={fly.overlay} pointerEvents="none">
-      <Animated.View style={[fly.content, { transform: [{ scale }, { translateY }], opacity }]}>
-        <View style={[fly.badge, { backgroundColor: cfg.bg }]}>
-          <Text style={fly.badgeText}>{tier}</Text>
-        </View>
-        <Text style={fly.label}>Added to {tier} Tier</Text>
+      <Animated.View style={[fly.tile, { transform: [{ scale }, { translateY }, { translateX }], opacity }]}>
+        {data.photoUrl ? (
+          <Image source={{ uri: data.photoUrl }} style={fly.tileImage} resizeMode="cover" />
+        ) : (
+          <View style={[fly.tileImage, fly.tileFallback, { backgroundColor: cfg.bg }]}>
+            <Text style={fly.tileFallbackText}>{data.tier}</Text>
+          </View>
+        )}
       </Animated.View>
     </View>
   );
@@ -285,16 +286,22 @@ export default function RankedScreen() {
   const [category, setCategory] = useState<CategoryFilter>(null);
   const [search, setSearch] = useState('');
   const [naming, setNaming] = useState(false);
-  const [flyTier, setFlyTier] = useState<TierKey | null>(null);
+  const [flyData, setFlyData] = useState<FlyData | null>(null);
   const [bounceTier, setBounceTier] = useState<TierKey | null>(null);
 
   const { selectionMode, selectedIds, enter, exit, toggle, canStack } = useSelectionMode();
+  const { tab } = useLocalSearchParams<{ tab?: string }>();
+  const flatListRef = useRef<FlatList>(null);
+  const dateNightsScrollRef = useRef<ScrollView>(null);
 
   useFocusEffect(
     useCallback(() => {
+      flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
+      dateNightsScrollRef.current?.scrollTo({ x: 0, y: 0, animated: false });
       setVisits(getAllVisits().filter(v => !(v as any).is_seed));
       setStacks(getAllStacks());
-    }, [])
+      if (tab === 'date-nights') setActiveTab('date-nights');
+    }, [tab])
   );
 
   // Also refresh stacks when tab changes
@@ -332,11 +339,14 @@ export default function RankedScreen() {
 
   function handleStackConfirm(name: string, tier: TierKey, note: string) {
     const visitIds = Array.from(selectedIds);
+    const spotCount = visitIds.length;
     createStack(name, visitIds, tier, note);
     setNaming(false);
     exit();
-    setStacks(getAllStacks());
-    setFlyTier(tier);
+    const updatedStacks = getAllStacks();
+    const photoUrl = updatedStacks.find(s => s.name === name)?.cover_photo ?? null;
+    setActiveTab('date-nights');
+    setFlyData({ tier, name, spotCount, photoUrl });
   }
 
   function handleNewStackFromDateNights() {
@@ -474,6 +484,7 @@ export default function RankedScreen() {
                 </View>
               ) : (
                 <FlatList
+                  ref={flatListRef}
                   data={selectionMode ? visits : sorted}
                   keyExtractor={v => v.id}
                   renderItem={({ item }) => (
@@ -529,6 +540,7 @@ export default function RankedScreen() {
           </View>
 
           <ScrollView
+            ref={dateNightsScrollRef}
             showsVerticalScrollIndicator={false}
             contentContainerStyle={s.listContent}
           >
@@ -563,13 +575,14 @@ export default function RankedScreen() {
           onCancel={() => setNaming(false)}
         />
       )}
-      {flyTier && (
-        <TierFlyOverlay
-          tier={flyTier}
+      {flyData && (
+        <StackFlyAnimation
+          data={flyData}
           onDone={() => {
-            setFlyTier(null);
-            setActiveTab('date-nights');
-            setBounceTier(flyTier);
+            const tier = flyData.tier;
+            setFlyData(null);
+            setStacks(getAllStacks());
+            setBounceTier(tier);
             setTimeout(() => setBounceTier(null), 800);
           }}
         />
@@ -984,21 +997,11 @@ const fly = StyleSheet.create({
     pointerEvents: 'none',
     zIndex: 999,
   },
-  content: { alignItems: 'center', gap: 12 },
-  badge: {
-    width: 90, height: 90, borderRadius: 24,
-    alignItems: 'center', justifyContent: 'center',
+  tile: {
     shadowColor: '#000', shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.25, shadowRadius: 16,
+    shadowOpacity: 0.22, shadowRadius: 20,
   },
-  badgeText: { fontSize: 44, fontWeight: '800', color: '#fff', letterSpacing: -2 },
-  label: {
-    fontSize: 17, fontWeight: '700', color: T.primary,
-    fontFamily: 'InstrumentSerif-Regular',
-    backgroundColor: T.card,
-    paddingHorizontal: 18, paddingVertical: 8,
-    borderRadius: 20, overflow: 'hidden',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08, shadowRadius: 8,
-  },
+  tileImage: { width: 110, height: 110, borderRadius: 26 },
+  tileFallback: { alignItems: 'center', justifyContent: 'center' },
+  tileFallbackText: { fontSize: 44, fontWeight: '800', color: '#fff', letterSpacing: -2 },
 });

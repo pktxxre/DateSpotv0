@@ -74,7 +74,7 @@ export default function EditProfileScreen() {
         <Pressable
           onPress={() => router.back()}
           hitSlop={12}
-          style={({ pressed }) => [pressed && { opacity: 0.6 }]}
+          style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.6 }]}
         >
           <View style={styles.backBtnCircle}>
             <Ionicons name="chevron-back" size={20} color={T.primary} />
@@ -159,14 +159,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 20, paddingTop: 6, paddingBottom: 14,
   },
+  backBtn: {},
   backBtnCircle: {
     width: 36, height: 36, borderRadius: 18,
     backgroundColor: T.inputBg,
     alignItems: 'center', justifyContent: 'center',
-    marginRight: 'auto',
   },
   headerTitle: {
-    position: 'absolute', left: 0, right: 0, textAlign: 'center',
+    flex: 1, textAlign: 'center',
     fontSize: 18, fontWeight: '700', color: T.primary,
     fontFamily: 'InstrumentSerif-Regular', letterSpacing: -0.2,
   },

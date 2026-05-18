@@ -6,7 +6,7 @@ export const Fonts = {
 
 export const T = {
   // Surfaces
-  bg: '#FCF9F2',
+  bg: '#FFFFFF',
   card: '#FFFFFF',
   inputBg: '#F2ECE4',
   segBg: '#E8E0D6',

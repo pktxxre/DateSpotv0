@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   StyleSheet, View, Text, ScrollView, Pressable,
   ActivityIndicator, Dimensions, TextInput, FlatList,
@@ -58,9 +58,11 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [city, setCity] = useState('');
+  const scrollRef = useRef<ScrollView>(null);
 
   useFocusEffect(
     useCallback(() => {
+      scrollRef.current?.scrollTo({ x: 0, y: 0, animated: false });
       setVisits(getAllVisits().filter(v => !(v as any).is_seed));
       setStacks(getAllStacks());
       getProfile().then(p => setCity(p.city || ''));
@@ -149,7 +151,7 @@ export default function HomeScreen() {
         <ProfileAvatar onPress={() => router.push('/(tabs)/profile')} />
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scroll}>
+      <ScrollView ref={scrollRef} showsVerticalScrollIndicator={false} contentContainerStyle={s.scroll}>
 
         {/* Search bar */}
         <View style={s.searchWrap}>
@@ -223,27 +225,6 @@ export default function HomeScreen() {
           );
         })()}
 
-        {/* Your Stacks — only shown when stacks exist */}
-        {stacks.length > 0 && (
-          <View style={s.stacksSection}>
-            <View style={s.stacksSectionHeader}>
-              <Text style={s.stacksSectionTitle}>Your stacks</Text>
-              <Pressable onPress={() => router.push('/(tabs)/lists')}>
-                <Text style={s.seeAll}>See all →</Text>
-              </Pressable>
-            </View>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={s.stacksScroll}
-            >
-              {stacks.map(stack => (
-                <HomeStackCard key={stack.id} stack={stack} />
-              ))}
-            </ScrollView>
-          </View>
-        )}
-
         {/* Top date spots header */}
         <View style={s.sectionHeaderRow}>
           <View>
@@ -292,6 +273,27 @@ export default function HomeScreen() {
               />
             ))}
           </ScrollView>
+        )}
+
+        {/* Your Stacks — only shown when stacks exist */}
+        {stacks.length > 0 && (
+          <View style={s.stacksSection}>
+            <View style={s.stacksSectionHeader}>
+              <Text style={s.stacksSectionTitle}>Your stacks</Text>
+              <Pressable onPress={() => router.push({ pathname: '/(tabs)/lists', params: { tab: 'date-nights' } } as any)}>
+                <Text style={s.seeAll}>See all →</Text>
+              </Pressable>
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={s.stacksScroll}
+            >
+              {stacks.map(stack => (
+                <HomeStackCard key={stack.id} stack={stack} />
+              ))}
+            </ScrollView>
+          </View>
         )}
 
         {/* Recent dates section */}

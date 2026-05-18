@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   StyleSheet, View, Text, Pressable, TextInput, Alert, ScrollView, Image, LayoutAnimation,
-  Modal, KeyboardAvoidingView, Platform,
+  Modal, KeyboardAvoidingView, Platform, Animated,
 } from 'react-native';
 import MapView, { Marker, Region, MapPressEvent } from 'react-native-maps';
 import BottomSheet, { BottomSheetView } from '@gorhom/bottom-sheet';
@@ -17,6 +17,7 @@ let _openLogWithLocationCallback: ((name: string, lat: number, lng: number) => v
 let _pendingOpenLog = false;
 let _pendingOpenFuture = false;
 let _pendingOpenLogWithLocation: { name: string; lat: number; lng: number } | null = null;
+let _skipNextResumePrompt = false;
 
 export function scheduleOpenLog() {
   if (_openLogCallback) { _openLogCallback(); }
@@ -56,15 +57,9 @@ interface NominatimResult {
   category: string;
 }
 
-// Symmetric pin-label layout: label slot | badge slot | label slot
-// Badge is always at the horizontal center → anchor { x: 0.5, y: 0.5 } always.
-// centerOffset = (0.5 - 0.5) * anyWidth = 0, so geographic position is immune
-// to snapshot-width measurement errors in react-native-maps.
-const PIN_BADGE_SLOT = 50;
-const PIN_LABEL_SLOT = 100;
-const PIN_GAP = 4;
-const PIN_TOTAL = PIN_LABEL_SLOT + PIN_GAP + PIN_BADGE_SLOT + PIN_GAP + PIN_LABEL_SLOT; // 258
-// badge center = 100+4+25 = 129 = 258/2 → x: 0.5 ✓
+
+const LABEL_NEIGHBOR_THRESHOLD = 0.008; // ~800m in degrees
+const LABEL_ZOOM_THRESHOLD = 0.04; // show pin labels when latitudeDelta is below this
 
 const SEATTLE_REGION: Region = {
   latitude: 47.6062,
@@ -143,6 +138,7 @@ export default function MapScreen() {
       sheetRef.current?.snapToIndex(1);
     };
     _openLogWithLocationCallback = (name: string, lat: number, lng: number) => {
+      _skipNextResumePrompt = true;
       setSelectedVisit(null);
       setDraft({ venue_name: name, lat, lng });
       toModalRef.current = true;
@@ -176,10 +172,15 @@ export default function MapScreen() {
       if (_pendingOpenLogWithLocation) {
         const { name, lat, lng } = _pendingOpenLogWithLocation;
         _pendingOpenLogWithLocation = null;
+        _skipNextResumePrompt = true;
         setSelectedVisit(null);
         setDraft({ venue_name: name, lat, lng });
         toModalRef.current = true;
         setStep('details');
+      }
+      if (_skipNextResumePrompt) {
+        _skipNextResumePrompt = false;
+        return;
       }
       loadDraft().then((saved) => {
         if (saved && saved.step !== 'done') {
@@ -483,19 +484,6 @@ export default function MapScreen() {
     return result;
   }, [displayedSeedSpots, zoomTier]);
 
-  // For each visible spot, decide label side: if a neighbor exists to the right, push label left.
-  const LABEL_NEIGHBOR_THRESHOLD = 0.005; // ~500m in degrees
-  const visitLabelSides = useMemo<Map<string, 'left' | 'right'>>(() => {
-    if (mapFilter !== 'been') return new Map();
-    return new Map(visits.map((v, i) => {
-      const hasRightNeighbor = visits.some((other, j) =>
-        i !== j &&
-        Math.abs(other.lat - v.lat) < LABEL_NEIGHBOR_THRESHOLD &&
-        other.lng > v.lng && other.lng - v.lng < LABEL_NEIGHBOR_THRESHOLD
-      );
-      return [v.id, hasRightNeighbor ? 'left' : 'right'];
-    }));
-  }, [visits, mapFilter]);
 
   const seedLabelSides = useMemo<Map<string, 'left' | 'right'>>(() => {
     if (mapFilter !== 'spots') return new Map();
@@ -512,6 +500,30 @@ export default function MapScreen() {
     }));
   }, [clusteredItems, mapFilter]);
 
+  const beenLabelSides = useMemo<Map<string, 'left' | 'right'>>(() => {
+    if (mapFilter !== 'been') return new Map();
+    return new Map(visits.map((v, i) => {
+      const hasRightNeighbor = visits.some((other, j) =>
+        i !== j &&
+        Math.abs(other.lat - v.lat) < LABEL_NEIGHBOR_THRESHOLD &&
+        other.lng > v.lng && other.lng - v.lng < LABEL_NEIGHBOR_THRESHOLD
+      );
+      return [v.id, hasRightNeighbor ? 'left' : 'right'];
+    }));
+  }, [visits, mapFilter]);
+
+  const wantLabelSides = useMemo<Map<string, 'left' | 'right'>>(() => {
+    if (mapFilter !== 'want') return new Map();
+    return new Map(futureSpots.map((s, i) => {
+      const hasRightNeighbor = futureSpots.some((other, j) =>
+        i !== j &&
+        Math.abs(other.lat - s.lat) < LABEL_NEIGHBOR_THRESHOLD &&
+        other.lng > s.lng && other.lng - s.lng < LABEL_NEIGHBOR_THRESHOLD
+      );
+      return [s.id, hasRightNeighbor ? 'left' : 'right'];
+    }));
+  }, [futureSpots, mapFilter]);
+
   const snapPoints = ['12%', '68%', '95%'];
 
   return (
@@ -527,46 +539,63 @@ export default function MapScreen() {
         onRegionChangeComplete={(r) => setRegion(r)}
       >
         {mapFilter === 'been' && visits.map((v) => {
-          const showLabel = region.latitudeDelta < 0.02;
-          const labelSide = visitLabelSides.get(v.id) ?? 'right';
+          const isSelected = selectedVisit?.id === v.id;
+          const color = ratingColor(v.rating);
+          const showLabel = region.latitudeDelta < LABEL_ZOOM_THRESHOLD;
+          const labelSide = beenLabelSides.get(v.id) ?? 'right';
           return (
             <Marker
-              key={v.id}
+              key={isSelected ? `sel-${v.id}` : v.id}
               coordinate={{ latitude: v.lat, longitude: v.lng }}
               onPress={() => handlePinPress(v)}
-              tracksViewChanges
-              zIndex={Math.round(v.rating * 10)}
+              tracksViewChanges={false}
+              zIndex={isSelected ? 9999 : Math.round(v.rating * 10)}
               anchor={{ x: 0.5, y: 0.5 }}
             >
-              <View style={{ flexDirection: 'row', alignItems: 'center', width: PIN_TOTAL }} pointerEvents="none">
-                {labelSide === 'left'
-                  ? <Text style={[styles.pinLabelText, styles.pinLabelLeft, { width: PIN_LABEL_SLOT, opacity: showLabel ? 1 : 0 }]} numberOfLines={1}>{v.venue_name}</Text>
-                  : <View style={{ width: PIN_LABEL_SLOT }} />}
-                <View style={{ width: PIN_GAP }} />
-                <View style={{ width: PIN_BADGE_SLOT, alignItems: 'center', justifyContent: 'center' }}>
-                  <View style={[styles.pinBadge, { borderColor: ratingColor(v.rating) }]}>
-                    <Text style={[styles.pinScore, { color: ratingColor(v.rating) }]}>{formatRating(v.rating)}</Text>
-                  </View>
+              <View pointerEvents="none" style={{ overflow: 'visible' }}>
+                <View style={[styles.pinBadge, { borderColor: color }, isSelected && { backgroundColor: color }]}>
+                  <Text style={[styles.pinScore, { color: isSelected ? '#fff' : color }]}>{formatRating(v.rating)}</Text>
                 </View>
-                <View style={{ width: PIN_GAP }} />
-                {labelSide === 'right'
-                  ? <Text style={[styles.pinLabelText, styles.pinLabelRight, { width: PIN_LABEL_SLOT, opacity: showLabel ? 1 : 0 }]} numberOfLines={1}>{v.venue_name}</Text>
-                  : <View style={{ width: PIN_LABEL_SLOT }} />}
+                {showLabel && (
+                  <Text
+                    style={[styles.pinLabel, labelSide === 'right' ? styles.pinLabelRight : styles.pinLabelLeft]}
+                    numberOfLines={1}
+                  >{v.venue_name}</Text>
+                )}
               </View>
             </Marker>
           );
         })}
-        {mapFilter === 'want' && futureSpots.map((s) => (
-          <Marker
-            key={s.id}
-            coordinate={{ latitude: s.lat, longitude: s.lng }}
-            onPress={() => { if (step === null) setSelectedFuture((p) => p?.id === s.id ? null : s); }}
-          >
-            <View style={styles.futurePinBadge} pointerEvents="none">
-              <Ionicons name="bookmark" size={13} color="#fff" />
-            </View>
-          </Marker>
-        ))}
+        {mapFilter === 'want' && futureSpots.map((s) => {
+          const showLabel = region.latitudeDelta < LABEL_ZOOM_THRESHOLD;
+          const labelSide = wantLabelSides.get(s.id) ?? 'right';
+          return (
+            <Marker
+              key={s.id}
+              coordinate={{ latitude: s.lat, longitude: s.lng }}
+              tracksViewChanges={false}
+              anchor={{ x: 0.5, y: 0.5 }}
+              onPress={() => {
+                if (step === null) {
+                  lastPinPressAt.current = Date.now();
+                  setSelectedFuture((p) => p?.id === s.id ? null : s);
+                }
+              }}
+            >
+              <View pointerEvents="none" style={{ overflow: 'visible' }}>
+                <View style={styles.futurePinBadge}>
+                  <Ionicons name="bookmark" size={13} color="#fff" />
+                </View>
+                {showLabel && (
+                  <Text
+                    style={[styles.pinLabel, labelSide === 'right' ? styles.pinLabelRight : styles.pinLabelLeft]}
+                    numberOfLines={1}
+                  >{s.venue_name}</Text>
+                )}
+              </View>
+            </Marker>
+          );
+        })}
         {mapFilter === 'spots' && clusteredItems.map((item) => {
           if (item.kind === 'cluster') {
             return (
@@ -582,31 +611,29 @@ export default function MapScreen() {
             );
           }
           const s = item.spot;
-          const showLabel = region.latitudeDelta < 0.02;
+          const isSelected = selectedSeedSpot?.id === s.id;
+          const pinColor = ratingColor(s.rating);
+          const showLabel = region.latitudeDelta < LABEL_ZOOM_THRESHOLD;
           const labelSide = seedLabelSides.get(s.id) ?? 'right';
           return (
             <Marker
-              key={s.id}
+              key={isSelected ? `sel-${s.id}` : s.id}
               coordinate={{ latitude: s.lat, longitude: s.lng }}
               onPress={() => { if (step === null) setSelectedSeedSpot(p => p?.id === s.id ? null : s); }}
-              tracksViewChanges
-              zIndex={Math.round(s.rating * 10)}
+              tracksViewChanges={false}
+              zIndex={isSelected ? 9999 : Math.round(s.rating * 10)}
               anchor={{ x: 0.5, y: 0.5 }}
             >
-              <View style={{ flexDirection: 'row', alignItems: 'center', width: PIN_TOTAL }} pointerEvents="none">
-                {labelSide === 'left'
-                  ? <Text style={[styles.pinLabelText, styles.pinLabelLeft, { width: PIN_LABEL_SLOT, opacity: showLabel ? 1 : 0 }]} numberOfLines={1}>{s.venue_name}</Text>
-                  : <View style={{ width: PIN_LABEL_SLOT }} />}
-                <View style={{ width: PIN_GAP }} />
-                <View style={{ width: PIN_BADGE_SLOT, alignItems: 'center', justifyContent: 'center' }}>
-                  <View style={[styles.seedPinBadge, { borderColor: ratingColor(s.rating) }]}>
-                    <Text style={[styles.seedPinScore, { color: ratingColor(s.rating) }]}>{formatRating(s.rating)}</Text>
-                  </View>
+              <View pointerEvents="none" style={{ overflow: 'visible' }}>
+                <View style={[styles.seedPinBadge, { borderColor: pinColor }, isSelected && { backgroundColor: pinColor }]}>
+                  <Text style={[styles.seedPinScore, { color: isSelected ? '#fff' : pinColor }]}>{formatRating(s.rating)}</Text>
                 </View>
-                <View style={{ width: PIN_GAP }} />
-                {labelSide === 'right'
-                  ? <Text style={[styles.pinLabelText, styles.pinLabelRight, { width: PIN_LABEL_SLOT, opacity: showLabel ? 1 : 0 }]} numberOfLines={1}>{s.venue_name}</Text>
-                  : <View style={{ width: PIN_LABEL_SLOT }} />}
+                {showLabel && (
+                  <Text
+                    style={[styles.pinLabel, labelSide === 'right' ? styles.pinLabelRight : styles.pinLabelLeft]}
+                    numberOfLines={1}
+                  >{s.venue_name}</Text>
+                )}
               </View>
             </Marker>
           );
@@ -674,27 +701,6 @@ export default function MapScreen() {
           <Text style={styles.pinHintText}>Tap the map to drop a pin</Text>
         </View>
       )}
-
-      {selectedVisit && step === null && mapFilter === 'been' && (
-        <VisitDetail visit={selectedVisit} onClose={() => setSelectedVisit(null)} />
-      )}
-
-      {selectedFuture && step === null && mapFilter === 'want' && (
-        <FutureDetail
-          spot={selectedFuture}
-          onClose={() => setSelectedFuture(null)}
-          onDelete={() => {
-            deleteFutureSpot(selectedFuture.id);
-            setFutureSpots(getAllFutureSpots());
-            setSelectedFuture(null);
-          }}
-        />
-      )}
-
-      {selectedSeedSpot && step === null && mapFilter === 'spots' && (
-        <SeedSpotDetail spot={selectedSeedSpot} onClose={() => setSelectedSeedSpot(null)} />
-      )}
-
 
       <BottomSheet
         ref={sheetRef}
@@ -798,6 +804,29 @@ export default function MapScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* Banners render last so they sit above the BottomSheet gesture layer */}
+      {selectedVisit && step === null && mapFilter === 'been' && (
+        <VisitDetail visit={selectedVisit} onClose={() => setSelectedVisit(null)} />
+      )}
+      {selectedFuture && step === null && mapFilter === 'want' && (
+        <FutureDetail
+          spot={selectedFuture}
+          onClose={() => setSelectedFuture(null)}
+          onDelete={() => {
+            deleteFutureSpot(selectedFuture.id);
+            setFutureSpots(getAllFutureSpots());
+            setSelectedFuture(null);
+          }}
+        />
+      )}
+      {selectedSeedSpot && step === null && mapFilter === 'spots' && (
+        <SeedSpotDetail
+          spot={selectedSeedSpot}
+          onClose={() => setSelectedSeedSpot(null)}
+          onSaved={() => setFutureSpots(getAllFutureSpots())}
+        />
+      )}
     </View>
   );
 }
@@ -832,31 +861,99 @@ function VisitDetail({ visit, onClose }: { visit: Visit; onClose: () => void }) 
   );
 }
 
-function SeedSpotDetail({ spot, onClose }: { spot: SeedSpot; onClose: () => void }) {
+function SeedSpotDetail({ spot, onClose, onSaved }: { spot: SeedSpot; onClose: () => void; onSaved: () => void }) {
   const info = ACTIVITY_TYPES.find(a => a.value === spot.activity_type);
   const preview = spot.notes?.trim().slice(0, 70) ?? null;
+  const [savedFutureId, setSavedFutureId] = useState<string | null>(() => {
+    const existing = getAllFutureSpots().find(
+      f => f.venue_name === spot.venue_name && Math.abs(f.lat - spot.lat) < 0.001
+    );
+    return existing?.id ?? null;
+  });
+  const toastAnimRef = useRef(new Animated.Value(0));
+  const toastAnim = toastAnimRef.current;
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const existing = getAllFutureSpots().find(
+      f => f.venue_name === spot.venue_name && Math.abs(f.lat - spot.lat) < 0.001
+    );
+    setSavedFutureId(existing?.id ?? null);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastAnim.setValue(0);
+  }, [spot.id]);
+
+  function showSavedToast() {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    Animated.spring(toastAnim, { toValue: 1, useNativeDriver: true, tension: 80, friction: 10 }).start();
+    toastTimer.current = setTimeout(() => {
+      Animated.timing(toastAnim, { toValue: 0, duration: 300, useNativeDriver: true }).start();
+    }, 1500);
+  }
+
+  function handleLog() {
+    scheduleOpenLogWithLocation(spot.venue_name, spot.lat, spot.lng);
+    onClose();
+  }
+
+  function toggleSave() {
+    if (savedFutureId) {
+      deleteFutureSpot(savedFutureId);
+      setSavedFutureId(null);
+      onSaved();
+    } else {
+      const newId = Crypto.randomUUID();
+      insertFutureSpot({ id: newId, venue_name: spot.venue_name, lat: spot.lat, lng: spot.lng, created_at: new Date().toISOString() });
+      setSavedFutureId(newId);
+      onSaved();
+      showSavedToast();
+    }
+  }
+
   return (
-    <Pressable style={styles.visitBanner} onPress={() => router.push(`/spot/${spot.id}`)}>
-      <View style={styles.visitBannerInner}>
-        <View style={styles.visitBannerBody}>
-          <View style={styles.visitBannerTop}>
-            <Text style={styles.visitBannerName} numberOfLines={1}>{spot.venue_name}</Text>
-            <View style={[styles.visitBannerPill, { borderColor: ratingColor(spot.rating) }]}>
-              <Text style={[styles.visitBannerPillText, { color: ratingColor(spot.rating) }]}>{formatRating(spot.rating)}</Text>
+    <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+      <Animated.View
+        style={[styles.savedToast, {
+          opacity: toastAnim,
+          transform: [{ translateY: toastAnim.interpolate({ inputRange: [0, 1], outputRange: [-8, 0] }) }],
+        }]}
+        pointerEvents="none"
+      >
+        <Ionicons name="bookmark" size={13} color="#5856d6" />
+        <Text style={styles.savedToastText}>Saved!</Text>
+      </Animated.View>
+      <Pressable style={styles.visitBanner} onPress={() => router.push(`/spot/${spot.id}`)}>
+        <View style={styles.visitBannerInner}>
+          <View style={styles.visitBannerBody}>
+            <View style={styles.visitBannerTop}>
+              <Text style={styles.visitBannerName} numberOfLines={1}>{spot.venue_name}</Text>
+              <View style={[styles.visitBannerPill, { borderColor: ratingColor(spot.rating) }]}>
+                <Text style={[styles.visitBannerPillText, { color: ratingColor(spot.rating) }]}>{formatRating(spot.rating)}</Text>
+              </View>
             </View>
+            <Text style={styles.visitBannerMeta}>
+              {info?.label ?? 'Other'} · {PRICE_LABELS[spot.price as Price]}
+            </Text>
+            {preview ? (
+              <Text style={styles.visitBannerPreview} numberOfLines={1}>{preview}</Text>
+            ) : null}
           </View>
-          <Text style={styles.visitBannerMeta}>
-            {info?.label} · {PRICE_LABELS[spot.price as Price]}
-          </Text>
-          {preview ? (
-            <Text style={styles.visitBannerPreview} numberOfLines={1}>{preview}</Text>
-          ) : null}
+          <View style={styles.visitBannerActions}>
+            <View style={styles.visitBannerActionGroup}>
+              <Pressable onPress={handleLog} hitSlop={8} style={styles.visitBannerActionBtn}>
+                <Ionicons name="add" size={20} color={T.accent} />
+              </Pressable>
+              <Pressable onPress={toggleSave} hitSlop={8} style={styles.visitBannerActionBtn}>
+                <Ionicons name={savedFutureId ? 'bookmark' : 'bookmark-outline'} size={17} color="#5856d6" />
+              </Pressable>
+            </View>
+            <Pressable onPress={onClose} hitSlop={12} style={styles.visitBannerClose}>
+              <Ionicons name="close" size={18} color={T.muted} />
+            </Pressable>
+          </View>
         </View>
-        <Pressable onPress={onClose} hitSlop={12} style={styles.visitBannerClose}>
-          <Ionicons name="close" size={18} color={T.muted} />
-        </Pressable>
-      </View>
-    </Pressable>
+      </Pressable>
+    </View>
   );
 }
 
@@ -877,19 +974,33 @@ function ProgressDots({ currentStep }: { currentStep: number }) {
   );
 }
 
-function useNominatimSearch(region: Region) {
+function useNominatimSearch(fallbackRegion: Region) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<NominatimResult[]>([]);
   const [loading, setLoading] = useState(false);
-  // Freeze the region at mount so panning while searching doesn't shift the box.
-  const regionRef = useRef(region);
+  const biasRef = useRef<{ lat: number; lng: number } | null>(null);
+
+  // Resolve GPS bias once at mount; fall back to the passed region if unavailable.
+  useEffect(() => {
+    (async () => {
+      try {
+        const { status } = await Location.getForegroundPermissionsAsync();
+        if (status === 'granted') {
+          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          biasRef.current = { lat: loc.coords.latitude, lng: loc.coords.longitude };
+          return;
+        }
+      } catch {}
+      biasRef.current = { lat: fallbackRegion.latitude, lng: fallbackRegion.longitude };
+    })();
+  }, []);
 
   useEffect(() => {
     if (query.length < 2) { setResults([]); setLoading(false); return; }
     setLoading(true);
-    const { latitude: lat, longitude: lng } = regionRef.current;
-    // Always search at least a ~35km radius regardless of current zoom level.
-    const delta = Math.max(regionRef.current.latitudeDelta, 0.3);
+    const bias = biasRef.current ?? { lat: fallbackRegion.latitude, lng: fallbackRegion.longitude };
+    const { lat, lng } = bias;
+    const delta = 0.08; // ~8km radius
     const vb = `${lng - delta},${lat + delta},${lng + delta},${lat - delta}`;
     const timer = setTimeout(async () => {
       try {
@@ -899,7 +1010,7 @@ function useNominatimSearch(region: Region) {
         if (data.length > 0) {
           setResults(data);
         } else {
-          // Nothing nearby — fall back to a biased global search so the field isn't empty.
+          // Nothing strictly nearby — biased global search as fallback.
           const fallback = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=6&viewbox=${vb}&addressdetails=1`;
           const fb = await fetch(fallback, { headers: { 'User-Agent': 'DateSpotApp/1.0' } });
           setResults(await fb.json());
@@ -1106,10 +1217,15 @@ function FutureNameStep({ value, onChange, onSave, onBack, suggestion, geocodeLo
 function FutureDetail({ spot, onClose, onDelete }: {
   spot: FutureSpot; onClose: () => void; onDelete: () => void;
 }) {
+  function handleLog() {
+    scheduleOpenLogWithLocation(spot.venue_name, spot.lat, spot.lng);
+    onClose();
+  }
+
   return (
-    <Pressable style={styles.visitBanner} onPress={() => router.push(`/future/${spot.id}` as any)}>
+    <View style={styles.visitBanner}>
       <View style={styles.visitBannerInner}>
-        <View style={styles.visitBannerBody}>
+        <Pressable style={styles.visitBannerBody} onPress={() => router.push(`/future/${spot.id}` as any)}>
           <View style={styles.visitBannerTop}>
             <Text style={styles.visitBannerName} numberOfLines={1}>{spot.venue_name}</Text>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
@@ -1118,12 +1234,17 @@ function FutureDetail({ spot, onClose, onDelete }: {
             </View>
           </View>
           <Text style={styles.visitBannerMeta}>Added {friendlyDate(spot.created_at)}</Text>
-        </View>
-        <Pressable onPress={onClose} hitSlop={12} style={styles.visitBannerClose}>
-          <Ionicons name="close" size={18} color={T.muted} />
         </Pressable>
+        <View style={styles.visitBannerActions}>
+          <Pressable onPress={handleLog} hitSlop={8} style={styles.visitBannerActionBtn}>
+            <Ionicons name="add" size={20} color={T.accent} />
+          </Pressable>
+          <Pressable onPress={onClose} hitSlop={12} style={styles.visitBannerClose}>
+            <Ionicons name="close" size={18} color={T.muted} />
+          </Pressable>
+        </View>
       </View>
-    </Pressable>
+    </View>
   );
 }
 
@@ -1577,6 +1698,18 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25, shadowRadius: 4,
   },
   pinScore: { fontSize: 12, fontWeight: '800' },
+  pinLabel: {
+    position: 'absolute',
+    top: 0, bottom: 0,
+    fontSize: 11, fontWeight: '700', color: '#000',
+    maxWidth: 80,
+    textAlignVertical: 'center',
+    textShadowColor: 'rgba(255,255,255,0.9)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 3,
+  },
+  pinLabelRight: { left: '100%', marginLeft: 5 },
+  pinLabelLeft: { right: '100%', marginRight: 5 },
 
   futurePinBadge: {
     width: 38, height: 38, borderRadius: 19,
@@ -1659,15 +1792,23 @@ const styles = StyleSheet.create({
   visitBannerPreview: { fontSize: 12, color: '#A0927E', fontStyle: 'italic', lineHeight: 16 },
   visitBannerPill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, borderWidth: 1.5, backgroundColor: 'transparent' },
   visitBannerPillText: { fontSize: 12, fontWeight: '800' },
-  visitBannerClose: { paddingTop: 1 },
-
-  pinLabelText: {
-    fontSize: 11, fontWeight: '700', color: T.primary,
-    textShadowColor: 'rgba(255,255,255,0.9)', textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 4,
+  visitBannerActions: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  visitBannerActionGroup: { flexDirection: 'column', alignItems: 'center', gap: 6 },
+  visitBannerActionBtn: {
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: T.inputBg, alignItems: 'center', justifyContent: 'center',
   },
-  pinLabelRight: { textAlign: 'left' },
-  pinLabelLeft: { textAlign: 'right' },
+  visitBannerClose: { paddingTop: 1 },
+  savedToast: {
+    position: 'absolute', bottom: 110, alignSelf: 'center', zIndex: 30,
+    flexDirection: 'row', alignItems: 'center', gap: 7,
+    backgroundColor: 'rgba(255,255,255,0.97)', borderRadius: 20,
+    paddingHorizontal: 16, paddingVertical: 10,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12, shadowRadius: 10,
+  },
+  savedToastText: { fontSize: 13, fontWeight: '600', color: '#5856d6' },
+
 
   searchResults: { maxHeight: 300, marginTop: 4 },
   searchResult: {

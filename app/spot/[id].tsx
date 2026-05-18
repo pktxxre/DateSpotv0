@@ -12,7 +12,7 @@ import {
   ACTIVITY_TYPES, PRICE_LABELS, DATE_TYPES, Price, ActivityType, DateType,
   ratingColor, formatRating, friendlyDate,
 } from '@/lib/visits';
-import { getStacksForVisit } from '@/lib/stacks';
+import { getStacksForVisit, createStack, TierKey } from '@/lib/stacks';
 import {
   startComparison, advance, resolveRankOrder, resolveAtMid,
   currentComparison, ComparisonState,
@@ -238,12 +238,70 @@ function EditDatePicker({ month, day, year, onMonthChange, onDayChange, onYearCh
 }
 
 
+const ACTIVITY_COLORS_HERO: Record<string, string> = {
+  food: '#C4604A',
+  drinks: '#C49A4A',
+  outdoors: '#6A8F6A',
+  view: '#6A8FA0',
+  entertainment: '#8B7BB0',
+  other: '#8B7255',
+};
+
+function triageToTier(rating: number): TierKey {
+  if (rating >= 8.0) return 'S';
+  if (rating >= 6.5) return 'A';
+  if (rating >= 5.0) return 'B';
+  if (rating >= 3.5) return 'C';
+  return 'F';
+}
+
+function MakeStackModal({ visit, onClose }: { visit: Visit; onClose: () => void }) {
+  const [name, setName] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  function handleCreate() {
+    if (!name.trim()) return;
+    setSaving(true);
+    const stack = createStack(name.trim(), [visit.id], triageToTier(visit.rating));
+    setSaving(false);
+    onClose();
+    router.push(`/stack/${stack.id}` as any);
+  }
+
+  return (
+    <Modal visible animationType="slide" presentationStyle="pageSheet">
+      <SafeAreaView style={e.root} edges={['top', 'bottom']}>
+        <View style={e.header}>
+          <Pressable onPress={onClose} hitSlop={8}><Text style={e.cancel}>Cancel</Text></Pressable>
+          <Text style={e.title}>Make a Stack</Text>
+          <Pressable onPress={handleCreate} disabled={saving || !name.trim()} hitSlop={8}>
+            <Text style={[e.save, (!name.trim() || saving) && { opacity: 0.35 }]}>Create</Text>
+          </Pressable>
+        </View>
+        <View style={{ paddingHorizontal: 20, paddingTop: 16 }}>
+          <TextInput
+            style={e.input}
+            placeholder="Name this stack…"
+            placeholderTextColor={T.placeholder}
+            value={name}
+            onChangeText={setName}
+            autoFocus
+            returnKeyType="done"
+            onSubmitEditing={handleCreate}
+          />
+        </View>
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
 export default function SpotDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [visit, setVisit] = useState<Visit | null>(null);
   const [seedSpot, setSeedSpot] = useState<SeedSpot | null>(null);
   const [editing, setEditing] = useState(false);
   const [rankingAgain, setRankingAgain] = useState(false);
+  const [makingStack, setMakingStack] = useState(false);
 
   useFocusEffect(useCallback(() => {
     if (!id) return;
@@ -266,6 +324,8 @@ export default function SpotDetailScreen() {
   const info = ACTIVITY_TYPES.find(a => a.value === visit.activity_type);
   const color = ratingColor(visit.rating);
   const dateStr = friendlyDate(visit.visited_at || visit.created_at);
+  const heroBg = ACTIVITY_COLORS_HERO[visit.activity_type] ?? ACTIVITY_COLORS_HERO.other;
+  const priceLabel = PRICE_LABELS[visit.price as Price];
 
   async function handleShare() {
     try {
@@ -291,106 +351,113 @@ export default function SpotDetailScreen() {
   }
 
   return (
-    <View style={styles.root}>
+    <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
       <Stack.Screen options={{ headerShown: false }} />
 
-      <SafeAreaView style={styles.headerSafe} edges={['top']}>
-        <View style={styles.header}>
-          <Pressable onPress={() => router.back()} hitSlop={12} style={styles.headerBtn}>
-            <Ionicons name="chevron-back" size={26} color={T.primary} />
+      {/* Floating header over colored hero */}
+      <SafeAreaView style={sd.floatingHeader} edges={['top']}>
+        <View style={sd.floatingHeaderInner}>
+          <Pressable onPress={() => router.back()} hitSlop={12} style={sd.floatingBtn}>
+            <Ionicons name="chevron-back" size={20} color="#fff" />
           </Pressable>
           <View style={{ flex: 1 }} />
-          <Pressable onPress={handleShare} hitSlop={12} style={styles.headerBtn}>
-            <Ionicons name="share-outline" size={22} color={T.primary} />
+          <Pressable onPress={handleShare} hitSlop={12} style={sd.floatingBtn}>
+            <Ionicons name="share-outline" size={20} color="#fff" />
           </Pressable>
-          <Pressable onPress={() => setEditing(true)} hitSlop={12} style={styles.headerBtn}>
-            <Ionicons name="pencil-outline" size={20} color={T.primary} />
+          <Pressable onPress={() => setEditing(true)} hitSlop={12} style={sd.floatingBtn}>
+            <Ionicons name="pencil-outline" size={18} color="#fff" />
           </Pressable>
-          <Pressable onPress={handleDelete} hitSlop={12} style={styles.headerBtn}>
-            <Ionicons name="trash-outline" size={20} color={T.danger} />
+          <Pressable onPress={handleDelete} hitSlop={12} style={sd.floatingBtn}>
+            <Ionicons name="trash-outline" size={18} color="#fff" />
           </Pressable>
         </View>
       </SafeAreaView>
 
-      <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ flexGrow: 1 }}>
+        <View style={{ backgroundColor: heroBg }}>
+          {/* Colored hero */}
+          <View style={sd.hero}>
+            <View style={sd.heroContent}>
+              <Text style={sd.heroMeta}>
+                {(info?.label ?? '').toUpperCase()}{priceLabel ? ` · ${priceLabel}` : ''}
+              </Text>
+              <Text style={sd.heroName}>{visit.venue_name}</Text>
+              <Text style={sd.heroCity}>{dateStr}</Text>
+            </View>
+          </View>
 
-        {/* Hero: name + date + tags */}
-        <View style={styles.hero}>
-          <Text style={styles.venueName}>{visit.venue_name}</Text>
-          <Text style={styles.dateStr}>{dateStr}</Text>
+          {/* White card */}
+          <View style={[sd.whiteCard, { minHeight: SCREEN_H }]}>
+            {/* Rating badge + action buttons */}
+            <View style={sd.badgeRow}>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                <Pressable style={styles.rankAgainBtn} onPress={() => setRankingAgain(true)}>
+                  <Ionicons name="git-compare-outline" size={13} color={T.accent} />
+                  <Text style={styles.rankAgainText}>Rank again</Text>
+                </Pressable>
+                <Pressable style={styles.rankAgainBtn} onPress={() => setMakingStack(true)}>
+                  <Ionicons name="layers-outline" size={13} color={T.accent} />
+                  <Text style={styles.rankAgainText}>Make a Stack</Text>
+                </Pressable>
+              </View>
+              <View style={[sd.ratingBadge, { borderColor: color }]}>
+                <Text style={[sd.ratingBadgeText, { color }]}>{formatRating(visit.rating)}</Text>
+              </View>
+            </View>
 
-          <View style={styles.tags}>
-            {info && (
-              <View style={styles.tag}>
-                <Text style={styles.tagText}>{info.label}</Text>
+            <View style={{ height: 20 }} />
+
+            {/* Notes */}
+            {visit.notes ? (
+              <>
+                <Text style={sd.sectionLabel}>NOTES FROM THE NIGHT</Text>
+                <Text style={sd.notesText}>{visit.notes}</Text>
+                <View style={{ height: 16 }} />
+              </>
+            ) : null}
+
+            {/* Map */}
+            <Text style={sd.sectionLabel}>WHERE IT IS</Text>
+            <Pressable style={sd.mapWrap} onPress={() => router.push('/(tabs)/map')}>
+              <MapView
+                style={StyleSheet.absoluteFill}
+                region={{ latitude: visit.lat, longitude: visit.lng, latitudeDelta: 0.006, longitudeDelta: 0.006 }}
+                scrollEnabled={false} zoomEnabled={false} rotateEnabled={false}
+                pitchEnabled={false} showsUserLocation={false} showsPointsOfInterest={false}
+                showsCompass={false} showsScale={false} mapType="standard" pointerEvents="none"
+              >
+                <Marker coordinate={{ latitude: visit.lat, longitude: visit.lng }}>
+                  <View style={[styles.pin, { borderColor: color }]}>
+                    <Text style={[styles.pinText, { color }]}>{formatRating(visit.rating)}</Text>
+                  </View>
+                </Marker>
+              </MapView>
+              <View style={styles.mapHint}>
+                <Ionicons name="map-outline" size={12} color="#fff" />
+                <Text style={styles.mapHintText}>View on map</Text>
+              </View>
+            </Pressable>
+
+            <View style={{ height: 20 }} />
+
+            {/* Photos */}
+            <Text style={sd.sectionLabel}>PHOTOS</Text>
+            {visit.photos.length > 0 ? (
+              <View style={sd.photosGrid}>
+                {visit.photos.map((uri, idx) => (
+                  <Image key={idx} source={{ uri }} style={sd.photoThumb} resizeMode="cover" />
+                ))}
+              </View>
+            ) : (
+              <View style={sd.emptySection}>
+                <Ionicons name="camera-outline" size={28} color={T.border} />
+                <Text style={sd.emptySectionText}>No photos yet</Text>
               </View>
             )}
-            <View style={styles.tag}>
-              <Text style={styles.tagText}>{PRICE_LABELS[visit.price as Price]}</Text>
-            </View>
-          </View>
 
-          {/* Rating — smaller, secondary */}
-          <View style={styles.ratingRow}>
-            <View style={[styles.ratingBadge, { borderColor: color }]}>
-              <Text style={[styles.ratingScore, { color }]}>{formatRating(visit.rating)}</Text>
-              <Text style={[styles.ratingSlash, { color: color + 'AA' }]}>/10</Text>
-            </View>
-            <Text style={styles.ratingCaption}>Avg. of your logs</Text>
-            <Pressable style={styles.rankAgainBtn} onPress={() => setRankingAgain(true)}>
-              <Ionicons name="git-compare-outline" size={13} color={T.accent} />
-              <Text style={styles.rankAgainText}>Rank again</Text>
-            </Pressable>
+            <View style={{ height: 40 }} />
           </View>
         </View>
-
-        {/* Notes */}
-        {visit.notes ? (
-          <View style={styles.section}>
-            <Text style={styles.sectionLabel}>Notes from the night</Text>
-            <View style={styles.notesCard}>
-              <Text style={styles.notesText}>{visit.notes}</Text>
-            </View>
-          </View>
-        ) : null}
-
-        {/* Photos */}
-        {visit.photos.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionLabel}>Photos</Text>
-            <View style={styles.photosGrid}>
-              {visit.photos.map((uri, idx) => (
-                <Image key={idx} source={{ uri }} style={styles.photoThumb} resizeMode="cover" />
-              ))}
-            </View>
-          </View>
-        )}
-
-        {/* Map — smaller, below content */}
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Location</Text>
-          <Pressable style={styles.mapCard} onPress={() => router.push('/(tabs)/map')}>
-            <MapView
-              style={StyleSheet.absoluteFill}
-              region={{ latitude: visit.lat, longitude: visit.lng, latitudeDelta: 0.006, longitudeDelta: 0.006 }}
-              scrollEnabled={false} zoomEnabled={false} rotateEnabled={false}
-              pitchEnabled={false} showsUserLocation={false} showsPointsOfInterest={false}
-              showsCompass={false} showsScale={false} mapType="standard" pointerEvents="none"
-            >
-              <Marker coordinate={{ latitude: visit.lat, longitude: visit.lng }}>
-                <View style={[styles.pin, { borderColor: color }]}>
-                  <Text style={[styles.pinText, { color }]}>{formatRating(visit.rating)}</Text>
-                </View>
-              </Marker>
-            </MapView>
-            <View style={styles.mapHint}>
-              <Ionicons name="map-outline" size={12} color="#fff" />
-              <Text style={styles.mapHintText}>View on map</Text>
-            </View>
-          </Pressable>
-        </View>
-
-        <View style={{ height: 48 }} />
       </ScrollView>
 
       {editing && (
@@ -407,18 +474,13 @@ export default function SpotDetailScreen() {
           onDone={(updated) => { setVisit(updated); setRankingAgain(false); }}
         />
       )}
+      {makingStack && (
+        <MakeStackModal visit={visit} onClose={() => setMakingStack(false)} />
+      )}
     </View>
   );
 }
 
-const ACTIVITY_COLORS_SD: Record<string, string> = {
-  food: '#C4604A',
-  drinks: '#C49A4A',
-  outdoors: '#6A8F6A',
-  view: '#6A8FA0',
-  entertainment: '#8B7BB0',
-  other: '#8B7255',
-};
 
 function SeedSpotDetail({ spot }: { spot: SeedSpot }) {
   const [savedFutureId, setSavedFutureId] = useState<string | null>(null);
@@ -430,8 +492,8 @@ function SeedSpotDetail({ spot }: { spot: SeedSpot }) {
   const info = ACTIVITY_TYPES.find(a => a.value === spot.activity_type);
   const color = ratingColor(spot.rating);
   const priceLabel = PRICE_LABELS[spot.price as Price];
-  const heroBg = ACTIVITY_COLORS_SD[spot.activity_type] ?? ACTIVITY_COLORS_SD.other;
-  const catLabel = info?.label ?? spot.activity_type;
+  const heroBg = ACTIVITY_COLORS_HERO[spot.activity_type] ?? ACTIVITY_COLORS_HERO.other;
+  const catLabel = info?.label ?? (spot.activity_type || 'Other');
 
   useEffect(() => {
     const existing = getAllFutureSpots().find(
@@ -501,7 +563,7 @@ function SeedSpotDetail({ spot }: { spot: SeedSpot }) {
   const isEditorsPick = spotRank !== null && spotRank <= 10;
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#FCF9F2' }}>
+    <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
       <Stack.Screen options={{ headerShown: false }} />
 
       {/* Floating header over hero */}
@@ -542,7 +604,7 @@ function SeedSpotDetail({ spot }: { spot: SeedSpot }) {
           <View style={sd.hero}>
             <View style={sd.heroContent}>
               <Text style={sd.heroMeta}>
-                {catLabel.toUpperCase()}{priceLabel ? ` · ${priceLabel}` : ''}
+                {(catLabel || 'Other').toUpperCase()}{priceLabel ? ` · ${priceLabel}` : ''}
               </Text>
               <Text style={sd.heroName}>{spot.venue_name}</Text>
               <Text style={sd.heroCity}>Seattle</Text>
