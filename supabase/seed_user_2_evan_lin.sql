@@ -100,7 +100,7 @@ insert into public.visits (
     'Canon', 47.6163, -122.3189,
     '2000-01-01T00:00:00Z', 9.0, 0.90,
     'The serious cocktail bar on Capitol Hill. 4,000+ spirits, bartenders who know what they''re doing, no attitude about it. Order off-menu by describing what you want. Best for a third or fourth date when you want to go somewhere that rewards curiosity.',
-    'drinks', 3, 'great', true, now()
+    'bars', 3, 'great', true, now()
   ),
 
   (
@@ -108,7 +108,7 @@ insert into public.visits (
     'Navy Strength', 47.6126, -122.3481,
     '2000-01-01T00:00:00Z', 8.7, 0.87,
     'Tiki bar in Belltown done with actual craft. The drinks are strong, the room feels like a secret, and the snacks hit. Go for the Last Resort and the crispy chicken. Loud enough that a slow conversation isn''t awkward.',
-    'drinks', 2, 'great', true, now()
+    'bars', 2, 'great', true, now()
   ),
 
   (
@@ -116,7 +116,7 @@ insert into public.visits (
     'Barnacle', 47.6685, -122.3838,
     '2000-01-01T00:00:00Z', 8.5, 0.85,
     'Tiny natural wine and oyster bar in Ballard attached to Staple & Fancy. Standing room only, usually. The list skews orange and funky — bring someone who''s either into it or genuinely curious. Excellent for pre-dinner drinks.',
-    'drinks', 3, 'great', true, now()
+    'bars', 3, 'great', true, now()
   ),
 
   (
@@ -124,7 +124,7 @@ insert into public.visits (
     'Rumba', 47.6137, -122.3258,
     '2000-01-01T00:00:00Z', 8.2, 0.82,
     'Rum-focused bar on Pike with a serious daiquiri program and good small plates. Lower key than Canon, easier to get into. The Hemingway daiquiri is the benchmark. Works well as a stop between dinner and wherever else.',
-    'drinks', 2, 'great', true, now()
+    'bars', 2, 'great', true, now()
   ),
 
   (
@@ -132,7 +132,7 @@ insert into public.visits (
     'Knee High Stocking Co.', 47.6183, -122.3188,
     '2000-01-01T00:00:00Z', 6.5, 0.65,
     'Low-key Capitol Hill cocktail spot that skips the theater. Competent drinks, no wait, better than the neighborhood''s dive bars. Good option when you want cocktails without the Canon commitment or price.',
-    'drinks', 2, 'okay', true, now()
+    'bars', 2, 'okay', true, now()
   ),
 
   -- ── COFFEE (categorized as other) ────────────────────────

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   StyleSheet, View, Text, Pressable, TextInput, Alert, ScrollView, Image, LayoutAnimation,
-  Modal, KeyboardAvoidingView, Platform, Animated,
+  Modal, KeyboardAvoidingView, Platform, Animated, ActivityIndicator,
 } from 'react-native';
 import MapView, { Marker, Region, MapPressEvent } from 'react-native-maps';
 import BottomSheet, { BottomSheetView } from '@gorhom/bottom-sheet';
@@ -34,7 +34,7 @@ export function scheduleOpenLogWithLocation(name: string, lat: number, lng: numb
 import * as Crypto from 'expo-crypto';
 import {
   getAllVisits, insertVisit, ratingColor, formatRating, friendlyDate, Visit,
-  ActivityType, Price, DateType, ACTIVITY_TYPES, PRICE_LABELS, DATE_TYPES,
+  ActivityType, OccasionType, Price, ACTIVITY_TYPES, OCCASION_TYPES, PRICE_LABELS,
 } from '@/lib/visits';
 import {
   startComparison, advance, resolveRankOrder, resolveAtMid,
@@ -74,7 +74,19 @@ const CITY_REGIONS: Record<string, Region> = {
 
 type Step = 'mode-select' | 'location' | 'details' | 'triage' | 'compare' | 'done' | 'future-pin' | 'future-name';
 type MapFilter = 'been' | 'want' | 'spots';
-type SpotsCategory = ActivityType | 'all';
+type SpotsCategory = string;
+
+const SEED_VENUE_TYPES = [
+  { value: 'food',          label: 'Food' },
+  { value: 'bars',          label: 'Bars' },
+  { value: 'cafes',         label: 'Cafes' },
+  { value: 'outdoors',      label: 'Outdoors' },
+  { value: 'indoors',       label: 'Indoors' },
+  { value: 'view',          label: 'Scenic' },
+  { value: 'entertainment', label: 'Entertainment' },
+  { value: 'shopping',      label: 'Shopping' },
+  { value: 'other',         label: 'Other' },
+];
 
 interface DraftVisit {
   lat: number;
@@ -83,8 +95,8 @@ interface DraftVisit {
   visited_at: string;
   notes: string;
   activity_type: ActivityType;
+  occasion_type: OccasionType;
   price: Price;
-  date_type: DateType;
   photos: string[];
   isPinOnly: boolean;
   address: string;
@@ -124,6 +136,7 @@ export default function MapScreen() {
   const mapRef = useRef<MapView>(null);
   const toModalRef = useRef(false);
   const lastPinPressAt = useRef(0);
+  const lastSavedLatLng = useRef<{ lat: number; lng: number } | null>(null);
 
   useEffect(() => {
     _openLogCallback = () => {
@@ -262,6 +275,16 @@ export default function MapScreen() {
     setGeocodeSuggestion(null);
     setGeocodeLoading(false);
     clearDraft();
+    const saved = lastSavedLatLng.current;
+    if (saved) {
+      lastSavedLatLng.current = null;
+      setTimeout(() => {
+        mapRef.current?.animateToRegion(
+          { latitude: saved.lat, longitude: saved.lng, latitudeDelta: 0.005, longitudeDelta: 0.005 },
+          500
+        );
+      }, 150);
+    }
   }
 
   function handleFutureDropPin() {
@@ -272,17 +295,25 @@ export default function MapScreen() {
 
   function saveFutureSpot() {
     if (!draft.lat || !draft.lng || !draft.venue_name?.trim()) return;
+    const { lat, lng } = draft;
     insertFutureSpot({
       id: Crypto.randomUUID(),
       venue_name: draft.venue_name.trim(),
-      lat: draft.lat,
-      lng: draft.lng,
+      lat,
+      lng,
       created_at: new Date().toISOString(),
     });
     setFutureSpots(getAllFutureSpots());
+    setMapFilter('want');
     setStep(null);
     setDraft({});
     sheetRef.current?.close();
+    setTimeout(() => {
+      mapRef.current?.animateToRegion(
+        { latitude: lat, longitude: lng, latitudeDelta: 0.005, longitudeDelta: 0.005 },
+        500
+      );
+    }, 150);
   }
 
   async function handleUseLocation() {
@@ -364,6 +395,10 @@ export default function MapScreen() {
       Alert.alert('Type required', 'What kind of spot was this?');
       return;
     }
+    if (!draft.occasion_type) {
+      Alert.alert('What kind of date?', 'Was this Romantic, Friend, or Solo?');
+      return;
+    }
     if (draft.visited_at) {
       const iso = draft.visited_at.match(/^(\d{4})-(\d{2})-(\d{2})/);
       if (iso) {
@@ -381,7 +416,8 @@ export default function MapScreen() {
   function handleTriage(triage: Triage) {
     setCurrentTriage(triage);
     const existing = getAllVisits();
-    const initial = startComparison(existing, (v) => v.triage === triage);
+    const occasion = draft.occasion_type || 'romantic';
+    const initial = startComparison(existing, (v) => v.triage === triage && v.occasion_type === occasion);
     setCmpState(initial);
     setStep('compare'); // always go to step 4; NoCompareStep handles the null case
   }
@@ -418,12 +454,14 @@ export default function MapScreen() {
       rank_order,
       notes: draft.notes || undefined,
       activity_type: draft.activity_type || 'other',
+      occasion_type: draft.occasion_type || 'romantic',
       price: draft.price ?? 2,
       triage,
-      date_type: draft.date_type || undefined,
       photos: draft.photos || [],
     }, undefined, draft.isPinOnly === true);
     setVisits(getAllVisits());
+    lastSavedLatLng.current = { lat: draft.lat, lng: draft.lng };
+    setMapFilter('been');
     setStep('done');
   }
 
@@ -538,34 +576,40 @@ export default function MapScreen() {
         onPress={handleMapPress}
         onRegionChangeComplete={(r) => setRegion(r)}
       >
-        {mapFilter === 'been' && visits.map((v) => {
-          const isSelected = selectedVisit?.id === v.id;
-          const color = ratingColor(v.rating);
-          const showLabel = region.latitudeDelta < LABEL_ZOOM_THRESHOLD;
-          const labelSide = beenLabelSides.get(v.id) ?? 'right';
-          return (
-            <Marker
-              key={isSelected ? `sel-${v.id}` : v.id}
-              coordinate={{ latitude: v.lat, longitude: v.lng }}
-              onPress={() => handlePinPress(v)}
-              tracksViewChanges={false}
-              zIndex={isSelected ? 9999 : Math.round(v.rating * 10)}
-              anchor={{ x: 0.5, y: 0.5 }}
-            >
-              <View pointerEvents="none" style={{ overflow: 'visible' }}>
-                <View style={[styles.pinBadge, { borderColor: color }, isSelected && { backgroundColor: color }]}>
-                  <Text style={[styles.pinScore, { color: isSelected ? '#fff' : color }]}>{formatRating(v.rating)}</Text>
-                </View>
-                {showLabel && (
-                  <Text
-                    style={[styles.pinLabel, labelSide === 'right' ? styles.pinLabelRight : styles.pinLabelLeft]}
-                    numberOfLines={1}
-                  >{v.venue_name}</Text>
-                )}
-              </View>
-            </Marker>
+        {mapFilter === 'been' && (() => {
+          const top3ids = new Set(
+            [...visits].sort((a, b) => b.rating - a.rating).slice(0, 3).map(v => v.id)
           );
-        })}
+          return visits.map((v) => {
+            const isSelected = selectedVisit?.id === v.id;
+            const isTop3 = top3ids.has(v.id);
+            const color = ratingColor(v.rating);
+            const showLabel = region.latitudeDelta < LABEL_ZOOM_THRESHOLD;
+            const labelSide = beenLabelSides.get(v.id) ?? 'right';
+            return (
+              <Marker
+                key={isSelected ? `sel-${v.id}` : v.id}
+                coordinate={{ latitude: v.lat, longitude: v.lng }}
+                onPress={() => handlePinPress(v)}
+                tracksViewChanges={false}
+                zIndex={isSelected ? 9999 : Math.round(v.rating * 10)}
+                anchor={{ x: 0.5, y: 0.5 }}
+              >
+                <View pointerEvents="none" style={{ overflow: 'visible' }}>
+                  <View style={[styles.pinBadge, { borderColor: color }, isSelected && { backgroundColor: color }]}>
+                    <Text style={[styles.pinScore, { color: isSelected ? '#fff' : color }, isTop3 && { fontWeight: '900' }]}>{formatRating(v.rating)}</Text>
+                  </View>
+                  {showLabel && (
+                    <Text
+                      style={[styles.pinLabel, labelSide === 'right' ? styles.pinLabelRight : styles.pinLabelLeft, { color: '#000' }, isTop3 && { fontWeight: '900' }]}
+                      numberOfLines={1}
+                    >{v.venue_name}</Text>
+                  )}
+                </View>
+              </Marker>
+            );
+          });
+        })()}
         {mapFilter === 'want' && futureSpots.map((s) => {
           const showLabel = region.latitudeDelta < LABEL_ZOOM_THRESHOLD;
           const labelSide = wantLabelSides.get(s.id) ?? 'right';
@@ -588,7 +632,7 @@ export default function MapScreen() {
                 </View>
                 {showLabel && (
                   <Text
-                    style={[styles.pinLabel, labelSide === 'right' ? styles.pinLabelRight : styles.pinLabelLeft]}
+                    style={[styles.pinLabel, labelSide === 'right' ? styles.pinLabelRight : styles.pinLabelLeft, { color: '#000' }]}
                     numberOfLines={1}
                   >{s.venue_name}</Text>
                 )}
@@ -630,7 +674,7 @@ export default function MapScreen() {
                 </View>
                 {showLabel && (
                   <Text
-                    style={[styles.pinLabel, labelSide === 'right' ? styles.pinLabelRight : styles.pinLabelLeft]}
+                    style={[styles.pinLabel, labelSide === 'right' ? styles.pinLabelRight : styles.pinLabelLeft, { color: '#000' }]}
                     numberOfLines={1}
                   >{s.venue_name}</Text>
                 )}
@@ -680,7 +724,7 @@ export default function MapScreen() {
               >
                 <Text style={[styles.categoryPillText, spotsCategory === 'all' && styles.categoryPillTextActive]}>All</Text>
               </Pressable>
-              {ACTIVITY_TYPES.map(a => (
+              {SEED_VENUE_TYPES.map(a => (
                 <Pressable
                   key={a.value}
                   style={[styles.categoryPill, spotsCategory === a.value && styles.categoryPillActive]}
@@ -779,6 +823,7 @@ export default function MapScreen() {
                 {step === 'compare' && !cmpState && (
                   <NoCompareStep
                     triage={currentTriage}
+                    activityLabel={OCCASION_TYPES.find(a => a.value === (draft.occasion_type || 'romantic'))?.label ?? 'Romantic'}
                     onSave={() => saveVisitWithTriage(1000, currentTriage)}
                   />
                 )}
@@ -862,7 +907,7 @@ function VisitDetail({ visit, onClose }: { visit: Visit; onClose: () => void }) 
 }
 
 function SeedSpotDetail({ spot, onClose, onSaved }: { spot: SeedSpot; onClose: () => void; onSaved: () => void }) {
-  const info = ACTIVITY_TYPES.find(a => a.value === spot.activity_type);
+  const info = SEED_VENUE_TYPES.find(a => a.value === spot.activity_type);
   const preview = spot.notes?.trim().slice(0, 70) ?? null;
   const [savedFutureId, setSavedFutureId] = useState<string | null>(() => {
     const existing = getAllFutureSpots().find(
@@ -978,47 +1023,29 @@ function useNominatimSearch(fallbackRegion: Region) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<NominatimResult[]>([]);
   const [loading, setLoading] = useState(false);
-  const biasRef = useRef<{ lat: number; lng: number } | null>(null);
-
-  // Resolve GPS bias once at mount; fall back to the passed region if unavailable.
-  useEffect(() => {
-    (async () => {
-      try {
-        const { status } = await Location.getForegroundPermissionsAsync();
-        if (status === 'granted') {
-          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-          biasRef.current = { lat: loc.coords.latitude, lng: loc.coords.longitude };
-          return;
-        }
-      } catch {}
-      biasRef.current = { lat: fallbackRegion.latitude, lng: fallbackRegion.longitude };
-    })();
-  }, []);
 
   useEffect(() => {
     if (query.length < 2) { setResults([]); setLoading(false); return; }
     setLoading(true);
-    const bias = biasRef.current ?? { lat: fallbackRegion.latitude, lng: fallbackRegion.longitude };
-    const { lat, lng } = bias;
-    const delta = 0.08; // ~8km radius
-    const vb = `${lng - delta},${lat + delta},${lng + delta},${lat - delta}`;
+    // Bias to the home city region (set from profile). Never use device GPS here —
+    // GPS can override the user's chosen city when on a simulator or traveling.
+    const lat = fallbackRegion.latitude;
+    const lng = fallbackRegion.longitude;
+    let cancelled = false;
+    // viewbox biases results toward the user's city; countrycodes=us hard-blocks
+    // international results. No bounded=1 — bounded causes Nominatim to return
+    // empty rather than reach outside the box, which breaks landmark searches.
+    const vb = `${lng - 4},${lat + 3},${lng + 4},${lat - 3}`;
     const timer = setTimeout(async () => {
       try {
-        const bounded = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=6&bounded=1&viewbox=${vb}&addressdetails=1`;
-        const res = await fetch(bounded, { headers: { 'User-Agent': 'DateSpotApp/1.0' } });
+        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=8&viewbox=${vb}&addressdetails=1`;
+        const res = await fetch(url, { headers: { 'User-Agent': 'DateSpotApp/1.0' } });
         const data: NominatimResult[] = await res.json();
-        if (data.length > 0) {
-          setResults(data);
-        } else {
-          // Nothing strictly nearby — biased global search as fallback.
-          const fallback = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=6&viewbox=${vb}&addressdetails=1`;
-          const fb = await fetch(fallback, { headers: { 'User-Agent': 'DateSpotApp/1.0' } });
-          setResults(await fb.json());
-        }
-      } catch { setResults([]); }
-      setLoading(false);
+        if (!cancelled) setResults(data);
+      } catch { if (!cancelled) setResults([]); }
+      if (!cancelled) setLoading(false);
     }, 400);
-    return () => clearTimeout(timer);
+    return () => { cancelled = true; clearTimeout(timer); };
   }, [query]);
 
   return { query, setQuery, results, loading };
@@ -1032,9 +1059,14 @@ function SearchResultsList({ results, loading, query, onSelect }: {
 }) {
   return (
     <ScrollView style={styles.searchResults} keyboardShouldPersistTaps="handled">
-      {loading && <Text style={styles.searchMsg}>Searching…</Text>}
+      {loading && (
+        <View style={styles.searchLoadingRow}>
+          <ActivityIndicator size="small" color="#A0927E" />
+          <Text style={[styles.searchMsg, { paddingVertical: 0 }]}>Searching…</Text>
+        </View>
+      )}
       {!loading && query.length >= 2 && results.length === 0 && (
-        <Text style={styles.searchMsg}>No results found</Text>
+        <Text style={styles.searchMsg}>No results found nearby</Text>
       )}
       {results.map(r => {
         const name = r.name || r.display_name.split(', ')[0];
@@ -1263,143 +1295,109 @@ function CircleButton({ icon, label, sublabel, onPress, tint }: {
 }
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-const DAYS = Array.from({ length: 31 }, (_, i) => String(i + 1));
-const NOW = new Date();
-const YEARS = Array.from({ length: 11 }, (_, i) => String(NOW.getFullYear() - i));
-const DATE_OPTION_H = 46;
-const DATE_DROPDOWN_H = DATE_OPTION_H * 2.5; // 2.5 rows visible before fade
+const CAL_DAY_HEADERS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 
-type DateField = 'month' | 'day' | 'year';
-
-function DatePicker({ month, day, year, onMonthChange, onDayChange, onYearChange, error }: {
-  month: string; day: string; year: string;
-  onMonthChange: (v: string) => void;
-  onDayChange: (v: string) => void;
-  onYearChange: (v: string) => void;
-  error?: boolean;
+function CalendarPicker({ value, onChange }: {
+  value: string;
+  onChange: (date: string) => void;
 }) {
-  const [open, setOpen] = useState<DateField | null>(null);
-  const [tabRowH, setTabRowH] = useState(68);
-  const [tabLayouts, setTabLayouts] = useState<Partial<Record<DateField, { x: number; width: number }>>>({});
-  const listRef = useRef<ScrollView>(null);
+  const today = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
 
-  function toggle(field: DateField) {
-    LayoutAnimation.configureNext({
-      duration: 240,
-      create: { type: 'easeInEaseOut', property: 'opacity' },
-      update: { type: 'easeInEaseOut' },
-      delete: { type: 'easeInEaseOut', property: 'opacity' },
-    });
-    setOpen(prev => prev === field ? null : field);
+  const parseDate = (s: string) => {
+    const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+    return null;
+  };
+
+  const selectedDate = value ? parseDate(value) : null;
+  const initDisplay = selectedDate || today;
+
+  const [displayYear, setDisplayYear] = useState(initDisplay.getFullYear());
+  const [displayMonth, setDisplayMonth] = useState(initDisplay.getMonth());
+
+  const isCurrentMonth = displayYear === today.getFullYear() && displayMonth === today.getMonth();
+
+  function prevMonth() {
+    if (displayMonth === 0) { setDisplayMonth(11); setDisplayYear(y => y - 1); }
+    else { setDisplayMonth(m => m - 1); }
   }
 
-  useEffect(() => {
-    if (!open) return;
-    const items = open === 'month' ? MONTHS : open === 'day' ? DAYS : YEARS;
-    const val = open === 'month' ? month : open === 'day' ? day : year;
-    const idx = items.indexOf(val);
-    if (idx >= 0) {
-      setTimeout(() => listRef.current?.scrollTo({ y: idx * DATE_OPTION_H, animated: false }), 40);
-    }
-  }, [open]);
-
-  function pick(field: DateField, val: string) {
-    if (field === 'month') onMonthChange(val);
-    else if (field === 'day') onDayChange(val);
-    else onYearChange(val);
-    LayoutAnimation.configureNext({
-      duration: 180,
-      update: { type: 'easeInEaseOut' },
-      delete: { type: 'easeInEaseOut', property: 'opacity' },
-    });
-    setOpen(null);
+  function nextMonth() {
+    if (isCurrentMonth) return;
+    if (displayMonth === 11) { setDisplayMonth(0); setDisplayYear(y => y + 1); }
+    else { setDisplayMonth(m => m + 1); }
   }
 
-  const fields: { key: DateField; label: string; value: string; flex?: number }[] = [
-    { key: 'month', label: 'Month', value: month, flex: 1.3 },
-    { key: 'day',   label: 'Day',   value: day },
-    { key: 'year',  label: 'Year',  value: year, flex: 1.4 },
-  ];
+  function selectDay(day: number) {
+    const d = new Date(displayYear, displayMonth, day);
+    if (d > today) return;
+    const mo = String(displayMonth + 1).padStart(2, '0');
+    const da = String(day).padStart(2, '0');
+    onChange(`${displayYear}-${mo}-${da}`);
+  }
 
-  const openItems = open === 'month' ? MONTHS : open === 'day' ? DAYS : YEARS;
-  const openVal   = open === 'month' ? month  : open === 'day' ? day   : year;
-  const dropLayout = open ? tabLayouts[open] : null;
+  const firstDayOfWeek = new Date(displayYear, displayMonth, 1).getDay();
+  const daysInMonth = new Date(displayYear, displayMonth + 1, 0).getDate();
+
+  const cells: (number | null)[] = [];
+  for (let i = 0; i < firstDayOfWeek; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+  while (cells.length < 42) cells.push(null);
 
   return (
-    <View style={{ marginBottom: 12, zIndex: 20 }}>
-      <View
-        style={styles.dateTabRow}
-        onLayout={e => setTabRowH(e.nativeEvent.layout.height)}
-      >
-        {fields.map(f => (
-          <Pressable
-            key={f.key}
-            style={[styles.dateTab, { flex: f.flex ?? 1 }, open === f.key && styles.dateTabOpen, error && !open && styles.dateTabError]}
-            onPress={() => toggle(f.key)}
-            onLayout={e => {
-              const { x, width } = e.nativeEvent.layout;
-              setTabLayouts(prev => ({ ...prev, [f.key]: { x, width } }));
-            }}
-          >
-            <Text style={styles.dateTabLabel}>{f.label}</Text>
-            <Text style={[styles.dateTabValue, open === f.key && styles.dateTabValueOpen]}>{f.value}</Text>
-            <Ionicons name={open === f.key ? 'chevron-up' : 'chevron-down'} size={11} color={open === f.key ? T.accent : T.muted} />
-          </Pressable>
+    <View style={styles.calendarContainer}>
+      <View style={styles.calendarHeader}>
+        <Pressable onPress={prevMonth} hitSlop={12} style={styles.calendarNavBtn}>
+          <Ionicons name="chevron-back" size={20} color={T.primary} />
+        </Pressable>
+        <Text style={styles.calendarMonthTitle}>{MONTHS[displayMonth]} {displayYear}</Text>
+        <Pressable onPress={nextMonth} hitSlop={12} style={styles.calendarNavBtn}>
+          <Ionicons name="chevron-forward" size={20} color={isCurrentMonth ? T.border : T.primary} />
+        </Pressable>
+      </View>
+      <View style={styles.calendarDayHeaders}>
+        {CAL_DAY_HEADERS.map((h, i) => (
+          <Text key={i} style={styles.calendarDayHeader}>{h}</Text>
         ))}
       </View>
-
-      {open && dropLayout && (
-        <View style={[styles.dateDropdown, {
-          position: 'absolute',
-          top: tabRowH + 4,
-          left: dropLayout.x,
-          width: dropLayout.width,
-          height: DATE_DROPDOWN_H,
-        }]}>
-          <ScrollView
-            ref={listRef}
-            showsVerticalScrollIndicator={false}
-            nestedScrollEnabled
-            style={{ flex: 1 }}
-          >
-            {openItems.map(item => {
-              const selected = item === openVal;
-              return (
-                <Pressable
-                  key={item}
-                  style={[styles.dateOption, selected && styles.dateOptionSelected]}
-                  onPress={() => pick(open, item)}
-                >
-                  <Text style={[styles.dateOptionText, selected && styles.dateOptionTextSelected]}>{item}</Text>
-                  {selected && <Ionicons name="checkmark" size={16} color={T.accent} />}
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-          {/* Bottom fade — signals scrollability */}
-          <View style={styles.dateFade} pointerEvents="none">
-            <View style={{ flex: 1, backgroundColor: 'rgba(252,249,242,0)' }} />
-            <View style={{ flex: 1, backgroundColor: 'rgba(252,249,242,0.55)' }} />
-            <View style={{ flex: 1, backgroundColor: 'rgba(252,249,242,0.9)' }} />
-          </View>
-        </View>
-      )}
+      <View style={styles.calendarGrid}>
+        {cells.map((day, i) => {
+          if (!day) return <View key={`e${i}`} style={styles.calendarCell} />;
+          const cellDate = new Date(displayYear, displayMonth, day);
+          const isFuture = cellDate > today;
+          const isSelected = !!(selectedDate &&
+            selectedDate.getFullYear() === displayYear &&
+            selectedDate.getMonth() === displayMonth &&
+            selectedDate.getDate() === day);
+          const isTodayCell = today.getFullYear() === displayYear &&
+            today.getMonth() === displayMonth &&
+            today.getDate() === day;
+          return (
+            <Pressable
+              key={day}
+              style={styles.calendarCell}
+              onPress={() => !isFuture && selectDay(day)}
+              disabled={isFuture}
+            >
+              <View style={[styles.calendarCellInner, isSelected && styles.calendarCellSelected]}>
+                <Text style={[
+                  styles.calendarCellText,
+                  isFuture && styles.calendarCellTextFuture,
+                  isSelected && styles.calendarCellTextSelected,
+                ]}>
+                  {day}
+                </Text>
+              </View>
+            </Pressable>
+          );
+        })}
+      </View>
     </View>
   );
-}
-
-function initDateState(dateStr?: string): { month: string; day: string; year: string } {
-  if (dateStr) {
-    const m = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if (m) {
-      return {
-        month: MONTHS[parseInt(m[2]) - 1] ?? MONTHS[NOW.getMonth()],
-        day: String(parseInt(m[3])),
-        year: m[1],
-      };
-    }
-  }
-  return { month: MONTHS[NOW.getMonth()], day: String(NOW.getDate()), year: String(NOW.getFullYear()) };
 }
 
 function DetailsStep({ draft, onChange, onNext, onBack, suggestion, geocodeLoading }: {
@@ -1418,26 +1416,35 @@ function DetailsStep({ draft, onChange, onNext, onBack, suggestion, geocodeLoadi
     }
   }, [suggestion]);
 
-  const initDate = initDateState(draft.visited_at);
-  const [month, setMonth] = useState(initDate.month);
-  const [day, setDay] = useState(initDate.day);
-  const [year, setYear] = useState(initDate.year);
+  const [showCalendar, setShowCalendar] = useState(false);
+  const calendarAnim = useRef(new Animated.Value(0)).current;
+
+  function toggleCalendar() {
+    const next = !showCalendar;
+    setShowCalendar(next);
+    Animated.timing(calendarAnim, {
+      toValue: next ? 1 : 0,
+      duration: 260,
+      useNativeDriver: false,
+    }).start();
+  }
+
+  const todayStr = useMemo(() => {
+    const t = new Date();
+    return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
+  }, []);
+
+  const dateValue = draft.visited_at?.match(/^\d{4}-\d{2}-\d{2}/)
+    ? draft.visited_at.slice(0, 10)
+    : todayStr;
 
   useEffect(() => {
-    const mi = MONTHS.indexOf(month) + 1;
-    const di = parseInt(day);
-    const yi = parseInt(year);
-    if (mi >= 1 && di >= 1 && di <= 31 && yi >= 2000) {
-      onChange('visited_at', `${yi}-${String(mi).padStart(2, '0')}-${String(di).padStart(2, '0')}`);
-    }
-  }, [month, day, year]);
+    if (!draft.visited_at) onChange('visited_at', todayStr);
+  }, []);
 
   const isFutureDate = (() => {
-    const mi = MONTHS.indexOf(month);
-    const di = parseInt(day);
-    const yi = parseInt(year);
-    if (isNaN(di) || isNaN(yi)) return false;
-    const picked = new Date(yi, mi, di);
+    if (!dateValue) return false;
+    const picked = new Date(dateValue + 'T00:00:00');
     const today = new Date(); today.setHours(0, 0, 0, 0);
     return picked > today;
   })();
@@ -1456,8 +1463,6 @@ function DetailsStep({ draft, onChange, onNext, onBack, suggestion, geocodeLoadi
       quality: 0.8,
     });
     if (result.canceled || !result.assets?.length) return;
-    // Store local URIs immediately — they're valid for this session.
-    // Upload happens in the edit flow once Supabase storage is configured.
     onChange('photos', [...photos, ...result.assets.map(a => a.uri)]);
   }
 
@@ -1466,127 +1471,132 @@ function DetailsStep({ draft, onChange, onNext, onBack, suggestion, geocodeLoadi
   }
 
   return (
-    <ScrollView style={styles.detailsScroll} contentContainerStyle={styles.stepContainer} keyboardShouldPersistTaps="handled">
-      <ProgressDots currentStep={2} />
-      <Text style={styles.stepTitle}>Tell me about it</Text>
-      <Text style={styles.stepSubtitle}>Step 2 of 5</Text>
+    <View style={{ flex: 1 }}>
+      <ScrollView style={styles.detailsScroll} contentContainerStyle={styles.stepContainer} keyboardShouldPersistTaps="handled">
+        <ProgressDots currentStep={2} />
+        <Text style={styles.stepTitle}>Tell me about it</Text>
+        <Text style={styles.stepSubtitle}>Step 2 of 5</Text>
 
-      {geocodeLoading && !draft.venue_name && (
-        <Text style={styles.geocodeHint}>Looking up the spot…</Text>
-      )}
-      <TextInput
-        style={styles.input}
-        placeholder="Name your date!"
-        placeholderTextColor="#c7c7cc"
-        value={draft.venue_name || ''}
-        onChangeText={(v) => onChange('venue_name', v)}
-        autoFocus
-        returnKeyType="next"
-      />
-      {suggestion && suggestion === draft.venue_name && (
-        <Text style={styles.geocodeHint}>Suggested from map · tap to edit</Text>
-      )}
+        <Text style={styles.sectionLabel}>Name</Text>
+        <TextInput
+          style={styles.input}
+          value={draft.venue_name || ''}
+          onChangeText={(v) => onChange('venue_name', v)}
+          placeholder={geocodeLoading ? 'Looking up the spot…' : 'Name this spot'}
+          placeholderTextColor="#c7c7cc"
+          returnKeyType="done"
+        />
 
-      <Text style={styles.sectionLabel}>Date</Text>
-      <DatePicker
-        month={month} day={day} year={year}
-        onMonthChange={setMonth}
-        onDayChange={setDay}
-        onYearChange={setYear}
-        error={isFutureDate}
-      />
-      {isFutureDate && (
-        <Text style={styles.dateError}>Date can't be in the future</Text>
-      )}
+        <Text style={styles.sectionLabel}>Date</Text>
+        <Pressable style={styles.calendarToggleBtn} onPress={toggleCalendar}>
+          <Ionicons name="calendar-outline" size={18} color={T.accent} />
+          <Text style={styles.calendarToggleBtnText}>{dateValue || 'Pick a date'}</Text>
+          <Ionicons name={showCalendar ? 'chevron-up' : 'chevron-down'} size={16} color={T.muted} />
+        </Pressable>
+        <Animated.View style={{
+          height: calendarAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 380] }),
+          overflow: 'hidden',
+        }}>
+          <CalendarPicker value={dateValue} onChange={(date) => {
+            onChange('visited_at', date);
+            setShowCalendar(false);
+            Animated.timing(calendarAnim, { toValue: 0, duration: 260, useNativeDriver: false }).start();
+          }} />
+        </Animated.View>
+        {isFutureDate && (
+          <Text style={styles.dateError}>Date can't be in the future</Text>
+        )}
 
-      <Text style={styles.sectionLabel}>Photos</Text>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.photoScroll}
-        contentContainerStyle={styles.photoScrollContent}
-      >
-        {photos.map((uri, i) => (
-          <Pressable key={i} style={styles.photoThumb} onLongPress={() => removePhoto(i)}>
-            <Image source={{ uri }} style={styles.photoThumbImg} />
+        <Text style={styles.sectionLabel}>Photos</Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.photoScroll}
+          contentContainerStyle={styles.photoScrollContent}
+        >
+          {photos.map((uri, i) => (
+            <Pressable key={i} style={styles.photoThumb} onLongPress={() => removePhoto(i)}>
+              <Image source={{ uri }} style={styles.photoThumbImg} />
+            </Pressable>
+          ))}
+          <Pressable style={styles.photoAdd} onPress={pickPhoto}>
+            <Ionicons name="camera-outline" size={22} color={T.muted} />
+            <Text style={styles.photoAddLabel}>Add photo</Text>
           </Pressable>
-        ))}
-        <Pressable style={styles.photoAdd} onPress={pickPhoto}>
-          <Ionicons name="camera-outline" size={22} color={T.muted} />
-          <Text style={styles.photoAddLabel}>Add photo</Text>
-        </Pressable>
+        </ScrollView>
+
+        <Text style={styles.sectionLabel}>Category</Text>
+        <View style={styles.chipWrap}>
+          {ACTIVITY_TYPES.map((a) => {
+            const selected = draft.activity_type === a.value;
+            return (
+              <Pressable
+                key={a.value}
+                style={[styles.chip, selected && styles.chipSelected]}
+                onPress={() => onChange('activity_type', selected ? null : a.value)}
+              >
+                <Text style={[styles.chipLabel, selected && styles.chipLabelSelected]}>{a.label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        <Text style={styles.sectionLabel}>What kind of date?</Text>
+        <View style={styles.occasionRow}>
+          {OCCASION_TYPES.map((a) => {
+            const selected = draft.occasion_type === a.value;
+            return (
+              <Pressable
+                key={a.value}
+                style={[styles.occasionBtn, selected && styles.occasionBtnSelected]}
+                onPress={() => onChange('occasion_type', selected ? null : a.value)}
+              >
+                <Text style={[styles.occasionLabel, selected && styles.occasionLabelSelected]}>{a.label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        <Text style={styles.sectionLabel}>Price range</Text>
+        <View style={styles.priceRow}>
+          {([0, 1, 2, 3] as Price[]).map((p) => {
+            const selected = draft.price === p;
+            return (
+              <Pressable
+                key={p}
+                style={[styles.priceBtn, selected && styles.priceBtnSelected]}
+                onPress={() => onChange('price', selected ? undefined : p)}
+              >
+                <Text style={[styles.priceBtnText, selected && styles.priceBtnTextSelected]}>
+                  {PRICE_LABELS[p]}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        <Text style={styles.sectionLabel}>Notes</Text>
+        <TextInput
+          style={[styles.input, styles.inputMultiline]}
+          placeholder="What made it memorable?"
+          placeholderTextColor="#c7c7cc"
+          value={draft.notes || ''}
+          onChangeText={(v) => onChange('notes', v)}
+          multiline
+          numberOfLines={3}
+        />
+
+        <View style={styles.btnRow}>
+          <Pressable style={styles.btnSecondary} onPress={onBack}>
+            <Text style={styles.btnSecondaryText}>Cancel</Text>
+          </Pressable>
+          <Pressable style={styles.btnPrimary} onPress={onNext}>
+            <Text style={styles.btnPrimaryText}>Next</Text>
+          </Pressable>
+        </View>
+        <View style={{ height: 24 }} />
       </ScrollView>
-
-      <Text style={styles.sectionLabel}>What kind of spot?</Text>
-      <View style={styles.chipWrap}>
-        {ACTIVITY_TYPES.map((a) => {
-          const selected = draft.activity_type === a.value;
-          return (
-            <Pressable
-              key={a.value}
-              style={[styles.chip, selected && styles.chipSelected]}
-              onPress={() => onChange('activity_type', selected ? null : a.value)}
-            >
-              <Text style={[styles.chipLabel, selected && styles.chipLabelSelected]}>{a.label}</Text>
-            </Pressable>
-          );
-        })}
-      </View>
-
-      <Text style={styles.sectionLabel}>Price range</Text>
-      <View style={styles.priceRow}>
-        {([0, 1, 2, 3] as Price[]).map((p) => {
-          const selected = draft.price === p;
-          return (
-            <Pressable
-              key={p}
-              style={[styles.priceBtn, selected && styles.priceBtnSelected]}
-              onPress={() => onChange('price', selected ? undefined : p)}
-            >
-              <Text style={[styles.priceBtnText, selected && styles.priceBtnTextSelected]}>
-                {PRICE_LABELS[p]}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
-
-      <Text style={styles.sectionLabel}>What kind of date?</Text>
-      <View style={styles.chipWrap}>
-        {DATE_TYPES.map((d) => {
-          const selected = draft.date_type === d.value;
-          return (
-            <Pressable
-              key={d.value}
-              style={[styles.chip, selected && styles.chipSelected]}
-              onPress={() => onChange('date_type', selected ? null : d.value)}
-            >
-              <Text style={[styles.chipLabel, selected && styles.chipLabelSelected]}>{d.label}</Text>
-            </Pressable>
-          );
-        })}
-      </View>
-
-      <TextInput
-        style={[styles.input, styles.inputMultiline]}
-        placeholder="Notes — what made it memorable?"
-        placeholderTextColor="#c7c7cc"
-        value={draft.notes || ''}
-        onChangeText={(v) => onChange('notes', v)}
-        multiline
-        numberOfLines={3}
-      />
-
-      <View style={styles.btnRow}>
-        <Pressable style={styles.btnSecondary} onPress={onBack}>
-          <Text style={styles.btnSecondaryText}>Cancel</Text>
-        </Pressable>
-        <Pressable style={styles.btnPrimary} onPress={onNext}>
-          <Text style={styles.btnPrimaryText}>Next</Text>
-        </Pressable>
-      </View>
-      <View style={{ height: 24 }} />
-    </ScrollView>
+    </View>
   );
 }
 
@@ -1611,14 +1621,14 @@ function TriageStep({ onPick }: { onPick: (t: Triage) => void }) {
   );
 }
 
-function NoCompareStep({ triage, onSave }: { triage: Triage; onSave: () => void }) {
+function NoCompareStep({ triage, activityLabel, onSave }: { triage: Triage; activityLabel: string; onSave: () => void }) {
   const tierLabel = triage === 'great' ? 'great' : triage === 'okay' ? 'okay' : 'bad';
   return (
     <View style={styles.stepContainer}>
       <ProgressDots currentStep={4} />
-      <Text style={styles.stepTitle}>First of its kind</Text>
+      <Text style={styles.stepTitle}>First {activityLabel} spot</Text>
       <Text style={styles.stepSubtitle}>
-        You don't have other {tierLabel} spots to compare yet. Once you log more, they'll rank against each other here.
+        You don't have other {tierLabel} {activityLabel.toLowerCase()} spots to compare yet. Once you log more, they'll rank against each other here.
       </Text>
       <Pressable style={styles.btnPrimaryCenter} onPress={onSave}>
         <Text style={styles.btnPrimaryText}>Save spot</Text>
@@ -1896,6 +1906,14 @@ const styles = StyleSheet.create({
   photoAddLabel: { fontSize: 10, color: T.muted, fontWeight: '500' },
 
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
+  occasionRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  occasionBtn: {
+    flex: 1, paddingVertical: 14, alignItems: 'center', justifyContent: 'center',
+    borderRadius: 12, borderWidth: 1.5, borderColor: T.border, backgroundColor: T.inputBg, gap: 4,
+  },
+  occasionBtnSelected: { backgroundColor: T.accentTint, borderColor: T.accent },
+  occasionLabel: { fontSize: 14, fontWeight: '600', color: T.primary },
+  occasionLabelSelected: { color: T.accent },
   chip: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
     backgroundColor: T.card, borderRadius: 20,
@@ -1953,36 +1971,36 @@ const styles = StyleSheet.create({
   },
   tooHardText: { fontSize: 14, fontWeight: '600', color: T.muted },
 
-  dateTabRow: { flexDirection: 'row', gap: 8 },
-  dateTab: {
-    flex: 1, borderRadius: 12, borderWidth: 1.5, borderColor: T.border,
-    paddingVertical: 10, paddingHorizontal: 10, alignItems: 'center', gap: 2,
-  },
-  dateTabOpen: { borderColor: T.accent, backgroundColor: T.accentTint },
-  dateTabError: { borderColor: '#ff3b30', backgroundColor: '#fff2f2' },
-  dateError: { fontSize: 12, color: '#ff3b30', fontWeight: '600', marginTop: 6, marginBottom: 4 },
-  dateTabLabel: { fontSize: 10, fontWeight: '600', color: T.muted, letterSpacing: 0.5 },
-  dateTabValue: { fontSize: 18, fontWeight: '700', color: T.primary },
-  dateTabValueOpen: { color: T.accent },
+  dateError: { fontSize: 12, color: '#ff3b30', fontWeight: '600', marginTop: -8, marginBottom: 8 },
 
-  dateDropdown: {
-    borderRadius: 12, borderWidth: 1.5, borderColor: T.accent,
-    backgroundColor: T.card, overflow: 'hidden',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.13, shadowRadius: 14, elevation: 10,
+  calendarContainer: {
+    borderRadius: 14, borderWidth: 1.5, borderColor: T.border,
+    backgroundColor: T.card, padding: 10, marginBottom: 12,
   },
-  dateOption: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 14, height: DATE_OPTION_H,
-    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.border,
+  calendarHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6,
   },
-  dateOptionSelected: { backgroundColor: T.accentTint },
-  dateOptionText: { fontSize: 15, fontWeight: '500', color: T.primary },
-  dateOptionTextSelected: { color: T.accent, fontWeight: '700' },
+  calendarNavBtn: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
+  calendarMonthTitle: { fontSize: 15, fontWeight: '700', color: T.primary },
+  calendarDayHeaders: { flexDirection: 'row', marginBottom: 2 },
+  calendarDayHeader: { flex: 1, textAlign: 'center', fontSize: 10, fontWeight: '600', color: T.muted, paddingBottom: 4 },
+  calendarGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  calendarCell: { width: '14.285714%', aspectRatio: 1, alignItems: 'center', justifyContent: 'center' },
+  calendarCellInner: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  calendarCellSelected: { backgroundColor: T.accent },
+  calendarCellText: { fontSize: 13, fontWeight: '500', color: T.primary },
+  calendarCellTextFuture: { color: T.primary, opacity: 0.25 },
+  calendarCellTextSelected: { color: '#fff', fontWeight: '700' },
 
-  dateFade: {
-    position: 'absolute', bottom: 0, left: 0, right: 0, height: 36,
+  calendarToggleBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    borderWidth: 1.5, borderColor: T.border, borderRadius: 10,
+    paddingHorizontal: 14, paddingVertical: 10,
+    backgroundColor: T.card, marginBottom: 8,
   },
+  calendarToggleBtnText: { flex: 1, fontSize: 15, color: T.primary, fontWeight: '500' },
+
+  searchLoadingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 16 },
 
   btnRow: { flexDirection: 'row', gap: 12, marginTop: 8 },
   btnPrimary: { flex: 1, backgroundColor: 'transparent', borderRadius: 14, paddingVertical: 16, alignItems: 'center', borderWidth: 1.5, borderColor: T.accent },

@@ -63,7 +63,8 @@ export function createStack(
   name: string,
   visitIds: string[],
   tier: TierKey,
-  tierNote: string = ''
+  tierNote: string = '',
+  coverPhoto: string | null = null
 ): Stack {
   const db = getDb();
   const id = `stack_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
@@ -71,8 +72,8 @@ export function createStack(
 
   db.withTransactionSync(() => {
     db.runSync(
-      `INSERT INTO stacks (id, name, rating, rank_order, created_at, tier, tier_note) VALUES (?, ?, 0, 0, ?, ?, ?)`,
-      [id, name, now, tier, tierNote.trim() || null]
+      `INSERT INTO stacks (id, name, rating, rank_order, created_at, tier, tier_note, cover_photo) VALUES (?, ?, 0, 0, ?, ?, ?, ?)`,
+      [id, name, now, tier, tierNote.trim() || null, coverPhoto]
     );
     visitIds.forEach((visitId, position) => {
       db.runSync(
@@ -88,9 +89,10 @@ export function createStack(
 
 export function getAllStacks(): StackSummary[] {
   const db = getDb();
-  const rows = db.getAllSync<Omit<StackSummary, 'cover_photo'> & { cover_photo_raw: string | null }>(`
+  const rows = db.getAllSync<Omit<StackSummary, 'cover_photo'> & { cover_photo_raw: string | null; stack_cover_photo: string | null }>(`
     SELECT
       s.id, s.name, s.rating, s.rank_order, s.created_at, s.tier, s.tier_note,
+      s.cover_photo AS stack_cover_photo,
       COUNT(sv.visit_id) AS spot_count,
       MIN(CASE WHEN sv.position = 0 THEN v.venue_name END) AS first_spot,
       MAX(CASE WHEN sv.position = (
@@ -107,14 +109,14 @@ export function getAllStacks(): StackSummary[] {
     ORDER BY s.rank_order DESC, s.created_at DESC
   `);
   return rows.map(r => {
-    let cover_photo: string | null = null;
-    if (r.cover_photo_raw) {
+    let cover_photo: string | null = r.stack_cover_photo ?? null;
+    if (!cover_photo && r.cover_photo_raw) {
       try {
         const arr = JSON.parse(r.cover_photo_raw);
         cover_photo = Array.isArray(arr) && arr.length > 0 ? arr[0] : null;
       } catch { /* ignore */ }
     }
-    const { cover_photo_raw, ...rest } = r;
+    const { cover_photo_raw, stack_cover_photo, ...rest } = r;
     return { ...rest, cover_photo };
   });
 }

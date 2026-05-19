@@ -6,7 +6,7 @@ import {
 import { useFocusEffect, router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { getAllVisits, Visit, ACTIVITY_TYPES, PRICE_LABELS, Price, formatRating, ratingColor, friendlyDate } from '@/lib/visits';
+import { getAllVisits, Visit, PRICE_LABELS, Price, formatRating, ratingColor, friendlyDate } from '@/lib/visits';
 import { getSeedSpotsRaw, getTopSpots, SeedSpot, TopSpot } from '@/lib/seeds';
 import { getAllStacks, StackSummary } from '@/lib/stacks';
 import { getProfile } from '@/lib/profile';
@@ -17,21 +17,36 @@ const SCREEN_W = Dimensions.get('window').width;
 const CARD_W = SCREEN_W - 40;
 const MONTHLY_GOAL = 6;
 
+const SEED_VENUE_TYPES = [
+  { value: 'food',          label: 'Food' },
+  { value: 'bars',          label: 'Bars' },
+  { value: 'cafes',         label: 'Cafes' },
+  { value: 'outdoors',      label: 'Outdoors' },
+  { value: 'indoors',       label: 'Indoors' },
+  { value: 'view',          label: 'Scenic' },
+  { value: 'entertainment', label: 'Entertainment' },
+  { value: 'shopping',      label: 'Shopping' },
+  { value: 'other',         label: 'Other' },
+];
+
 const CATEGORY_LABELS: Record<string, string> = {
-  food: 'Food',
-  drinks: 'Drinks',
-  outdoors: 'Outdoors',
-  view: 'Views',
-  entertainment: 'Entertainment',
-  other: 'Other',
+  // Venue types (seed spots)
+  food: 'Food', bars: 'Bars', cafes: 'Cafes', outdoors: 'Outdoors',
+  indoors: 'Indoors', view: 'Views', entertainment: 'Entertainment',
+  shopping: 'Shopping', other: 'Other',
+  // Occasion types (personal visits)
+  romantic: 'Romantic', friend: 'Friend', solo: 'Solo',
 };
 
 const ACTIVITY_COLORS: Record<string, string> = {
   food: '#C4604A',
-  drinks: '#C49A4A',
+  bars: '#C49A4A',
+  cafes: '#A07850',
   outdoors: '#6A8F6A',
+  indoors: '#7A8CAA',
   view: '#6A8FA0',
   entertainment: '#8B7BB0',
+  shopping: '#C47890',
   other: '#8B7255',
 };
 
@@ -113,7 +128,7 @@ export default function HomeScreen() {
       }))
     : seeds;
 
-  const categoryCards = ACTIVITY_TYPES.map(a => {
+  const categoryCards = SEED_VENUE_TYPES.map(a => {
     const spots = discoverySpots
       .filter(s => s.activity_type === a.value)
       .sort((x, y) => y.rating - x.rating)

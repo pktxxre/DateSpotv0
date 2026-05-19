@@ -2,6 +2,19 @@
 
 All notable changes to DateSpot are documented here.
 
+## [0.1.2.0] - 2026-05-19
+
+### Added
+- Stack creation modal now includes a cover photo picker below the name field — tap to upload from your library; the selected image becomes the stack's cover photo
+- Stacks without a cover photo now show a letter placeholder tile (first character of the stack name) in the tier list — styled with an orange tint border matching the New Stack button
+- Occasion type (Romantic / Friend / Solo) is now a distinct field from activity type in the log flow, allowing both dimensions to be tracked independently
+- Activity type gains new categories: Bars, Cafes, Indoors, and Shopping (replaces Drinks)
+- Map screen pans to the newly saved pin location after a log is completed
+
+### Changed
+- Stack cover photo falls back to the first spot's photo if no stack-level photo is set, preserving existing behavior
+- Seed venue type filter on the map now uses expanded categories matching the new activity type list
+
 ## [0.1.1.0] - 2026-05-17
 
 ### Added

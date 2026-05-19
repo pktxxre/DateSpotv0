@@ -32,7 +32,7 @@ function buildActivity(visits: Visit[]): ActivityItem[] {
         label: `Logged ${v.venue_name}`,
         sublabel: info?.label ?? 'Spot',
         date: v.visited_at,
-        emoji: info?.emoji ?? '📍',
+        emoji: '📍',
       };
     });
 }

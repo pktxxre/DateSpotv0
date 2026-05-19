@@ -9,7 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import {
   getVisitById, deleteVisit, updateVisit, getAllVisits, updateRankOrder, recomputeRatings, Visit,
-  ACTIVITY_TYPES, PRICE_LABELS, DATE_TYPES, Price, ActivityType, DateType,
+  ACTIVITY_TYPES, OCCASION_TYPES, PRICE_LABELS, Price, ActivityType, OccasionType,
   ratingColor, formatRating, friendlyDate,
 } from '@/lib/visits';
 import { getStacksForVisit, createStack, TierKey } from '@/lib/stacks';
@@ -54,9 +54,9 @@ function initDateState(dateStr?: string): { month: string; day: string; year: st
 function RankAgainModal({ visit, onClose, onDone }: {
   visit: Visit; onClose: () => void; onDone: (updated: Visit) => void;
 }) {
-  const others = getAllVisits().filter(v => v.id !== visit.id && v.triage === visit.triage);
+  const others = getAllVisits().filter(v => v.id !== visit.id && v.triage === visit.triage && v.occasion_type === visit.occasion_type);
   const [cmpState, setCmpState] = useState<ComparisonState<Visit> | null>(
-    () => startComparison(others, (v) => v.triage === visit.triage)
+    () => startComparison(others, (v) => v.triage === visit.triage && v.occasion_type === visit.occasion_type)
   );
 
   function handleResult(result: 'better' | 'worse') {
@@ -85,7 +85,7 @@ function RankAgainModal({ visit, onClose, onDone }: {
   const cardContent = others.length === 0 ? (
     <>
       <Text style={r.title}>Nothing to compare</Text>
-      <Text style={r.subtitle}>Log more {visit.triage} spots to start ranking.</Text>
+      <Text style={r.subtitle}>Log more {visit.triage} {OCCASION_TYPES.find(a => a.value === visit.occasion_type)?.label?.toLowerCase() ?? 'romantic'} spots to start ranking.</Text>
       <Pressable style={r.secBtn} onPress={onClose}><Text style={r.secBtnText}>Got it</Text></Pressable>
     </>
   ) : opponent ? (
@@ -239,12 +239,14 @@ function EditDatePicker({ month, day, year, onMonthChange, onDayChange, onYearCh
 
 
 const ACTIVITY_COLORS_HERO: Record<string, string> = {
-  food: '#C4604A',
-  drinks: '#C49A4A',
-  outdoors: '#6A8F6A',
-  view: '#6A8FA0',
-  entertainment: '#8B7BB0',
-  other: '#8B7255',
+  // Occasion types (personal visits)
+  romantic: '#C4604A',
+  friend:   '#C49A4A',
+  solo:     '#6A8FA0',
+  // Venue types (seed spots — fallback colors)
+  food: '#C4604A', bars: '#C49A4A', cafes: '#A07850',
+  outdoors: '#6A8F6A', indoors: '#7A8CAA', view: '#6A8FA0',
+  entertainment: '#8B7BB0', shopping: '#C47890', other: '#8B7255',
 };
 
 function triageToTier(rating: number): TierKey {
@@ -489,11 +491,12 @@ function SeedSpotDetail({ spot }: { spot: SeedSpot }) {
   const [ratingExpanded, setRatingExpanded] = useState(false);
   const bannerAnim = useRef(new Animated.Value(0)).current;
   const bannerTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const info = ACTIVITY_TYPES.find(a => a.value === spot.activity_type);
   const color = ratingColor(spot.rating);
   const priceLabel = PRICE_LABELS[spot.price as Price];
   const heroBg = ACTIVITY_COLORS_HERO[spot.activity_type] ?? ACTIVITY_COLORS_HERO.other;
-  const catLabel = info?.label ?? (spot.activity_type || 'Other');
+  const catLabel = spot.activity_type
+    ? spot.activity_type.charAt(0).toUpperCase() + spot.activity_type.slice(1)
+    : 'Other';
 
   useEffect(() => {
     const existing = getAllFutureSpots().find(
@@ -915,8 +918,8 @@ function EditModal({ visit, onClose, onSave }: { visit: Visit; onClose: () => vo
   const [name, setName] = useState(visit.venue_name);
   const [notes, setNotes] = useState(visit.notes ?? '');
   const [activity, setActivity] = useState<ActivityType | null>(visit.activity_type);
+  const [occasion, setOccasion] = useState<OccasionType | null>(visit.occasion_type);
   const [price, setPrice] = useState<Price | undefined>(visit.price);
-  const [dateType, setDateType] = useState<DateType | null>(visit.date_type ?? null);
   const [photos, setPhotos] = useState<string[]>(visit.photos ?? []);
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -962,8 +965,8 @@ function EditModal({ visit, onClose, onSave }: { visit: Visit; onClose: () => vo
       venue_name: name.trim(), visited_at: visitedAt,
       notes: notes.trim() || null,
       activity_type: activity ?? visit.activity_type,
+      occasion_type: occasion ?? visit.occasion_type,
       price: price ?? visit.price,
-      date_type: dateType,
       photos,
     });
     const updated = getVisitById(visit.id);
@@ -1001,13 +1004,25 @@ function EditModal({ visit, onClose, onSave }: { visit: Visit; onClose: () => vo
             </Pressable>
           </View>
 
-          <Text style={e.sectionLabel}>What kind of spot?</Text>
+          <Text style={e.sectionLabel}>Category</Text>
           <View style={e.chipWrap}>
             {ACTIVITY_TYPES.map(a => {
               const sel = activity === a.value;
               return (
                 <Pressable key={a.value} style={[e.chip, sel && e.chipSel]} onPress={() => setActivity(sel ? null : a.value)}>
                   <Text style={[e.chipLabel, sel && e.chipLabelSel]}>{a.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <Text style={e.sectionLabel}>What kind of date?</Text>
+          <View style={e.occasionRow}>
+            {OCCASION_TYPES.map(a => {
+              const sel = occasion === a.value;
+              return (
+                <Pressable key={a.value} style={[e.occasionBtn, sel && e.occasionBtnSel]} onPress={() => setOccasion(sel ? null : a.value)}>
+                  <Text style={[e.occasionLabel, sel && e.occasionLabelSel]}>{a.label}</Text>
                 </Pressable>
               );
             })}
@@ -1020,18 +1035,6 @@ function EditModal({ visit, onClose, onSave }: { visit: Visit; onClose: () => vo
               return (
                 <Pressable key={p} style={[e.priceBtn, sel && e.priceBtnSel]} onPress={() => setPrice(sel ? undefined : p)}>
                   <Text style={[e.priceBtnText, sel && e.priceBtnTextSel]}>{PRICE_LABELS[p]}</Text>
-                </Pressable>
-              );
-            })}
-          </View>
-
-          <Text style={e.sectionLabel}>What kind of date?</Text>
-          <View style={e.chipWrap}>
-            {DATE_TYPES.map(d => {
-              const sel = dateType === d.value;
-              return (
-                <Pressable key={d.value} style={[e.chip, sel && e.chipSel]} onPress={() => setDateType(sel ? null : d.value)}>
-                  <Text style={[e.chipLabel, sel && e.chipLabelSel]}>{d.label}</Text>
                 </Pressable>
               );
             })}
@@ -1162,6 +1165,14 @@ const e = StyleSheet.create({
   inputMulti: { minHeight: 90, textAlignVertical: 'top', marginBottom: 0 },
 
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
+  occasionRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
+  occasionBtn: {
+    flex: 1, paddingVertical: 14, alignItems: 'center', justifyContent: 'center',
+    borderRadius: 12, borderWidth: 1.5, borderColor: T.border, backgroundColor: T.inputBg, gap: 4,
+  },
+  occasionBtnSel: { backgroundColor: T.accentTint, borderColor: T.accent },
+  occasionLabel: { fontSize: 14, fontWeight: '600', color: T.primary },
+  occasionLabelSel: { color: T.accent },
   chip: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
     backgroundColor: T.inputBg, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8,

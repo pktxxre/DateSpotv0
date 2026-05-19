@@ -10,7 +10,7 @@ import Animated, {
   useSharedValue, useAnimatedStyle, withRepeat, withTiming, Easing,
 } from 'react-native-reanimated';
 import { getSeedSpotsRaw, SeedSpot } from '@/lib/seeds';
-import { ACTIVITY_TYPES, PRICE_LABELS, ratingColor, formatRating, Price } from '@/lib/visits';
+import { PRICE_LABELS, ratingColor, formatRating, Price } from '@/lib/visits';
 import { T } from '@/lib/theme';
 
 type PriceFilter = 0 | 1 | 2 | 3 | null;
@@ -104,21 +104,33 @@ function SpotsSkeleton() {
   );
 }
 
+const SEED_VENUE_TYPES = [
+  { value: 'food',          label: 'Food' },
+  { value: 'bars',          label: 'Bars' },
+  { value: 'cafes',         label: 'Cafes' },
+  { value: 'outdoors',      label: 'Outdoors' },
+  { value: 'indoors',       label: 'Indoors' },
+  { value: 'view',          label: 'Scenic' },
+  { value: 'entertainment', label: 'Entertainment' },
+  { value: 'shopping',      label: 'Shopping' },
+  { value: 'other',         label: 'Other' },
+];
+
 const CATEGORY_LABELS: Record<string, string> = {
-  food: 'Food',
-  drinks: 'Drinks',
-  outdoors: 'Outdoors',
-  view: 'Views',
-  entertainment: 'Entertainment',
-  other: 'Other',
+  food: 'Food', bars: 'Bars', cafes: 'Cafes', outdoors: 'Outdoors',
+  indoors: 'Indoors', view: 'Views', entertainment: 'Entertainment',
+  shopping: 'Shopping', other: 'Other',
 };
 
 const ACTIVITY_COLORS: Record<string, string> = {
   food: '#C4604A',
-  drinks: '#C49A4A',
+  bars: '#C49A4A',
+  cafes: '#A07850',
   outdoors: '#6A8F6A',
+  indoors: '#7A8CAA',
   view: '#6A8FA0',
   entertainment: '#8B7BB0',
+  shopping: '#C47890',
   other: '#8B7255',
 };
 
@@ -192,7 +204,7 @@ export default function SpotsScreen() {
                 All {seeds.length > 0 ? seeds.length : ''}
               </Text>
             </Pressable>
-            {ACTIVITY_TYPES.map(a => {
+            {SEED_VENUE_TYPES.map(a => {
               const count = categoryCounts[a.value] ?? 0;
               if (count === 0) return null;
               const active = categoryFilter === a.value;

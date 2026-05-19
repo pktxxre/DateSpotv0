@@ -15,7 +15,7 @@ import {
   startComparison, advance, resolveRankOrder, resolveAtMid,
   currentComparison, ComparisonState,
 } from '@/lib/ranking';
-import { ratingColor, formatRating, friendlyDate, getAllVisits, Visit } from '@/lib/visits';
+import { ratingColor, formatRating, friendlyDate, getAllVisits, Visit, ACTIVITY_TYPES } from '@/lib/visits';
 import type { Stack as StackType } from '@/lib/stacks';
 import { T } from '@/lib/theme';
 
@@ -199,11 +199,11 @@ function SpotMiniCard({ visit, index }: { visit: StackVisitRow; index: number })
       style={({ pressed }) => [s.spotCard, pressed && { opacity: 0.7 }]}
       onPress={() => router.push(`/spot/${visit.visit_id}`)}
     >
+      <View style={[s.accentBar, { backgroundColor: color }]} />
       <Text style={s.spotIndex}>{index + 1}</Text>
-      <View style={[s.triageDot, { backgroundColor: color }]} />
       <View style={s.spotInfo}>
         <Text style={s.spotName} numberOfLines={1}>{visit.venue_name}</Text>
-        <Text style={s.spotMeta}>{visit.activity_type} · {dateStr}</Text>
+        <Text style={s.spotMeta}>{ACTIVITY_TYPES.find(a => a.value === visit.activity_type)?.label ?? visit.activity_type} · {dateStr}</Text>
       </View>
       {visit.rating > 0 && (
         <View style={[s.scorePill, { borderColor: color }]}>
@@ -432,19 +432,24 @@ const s = StyleSheet.create({
   spotCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 13,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: T.border,
-    gap: 10,
-    minHeight: 44,
   },
-  spotIndex: { fontSize: 13, fontWeight: '500', color: T.muted, width: 20, textAlign: 'center' },
-  triageDot: { width: 8, height: 8, borderRadius: 4 },
-  spotInfo: { flex: 1 },
-  spotName: { fontSize: 14, fontWeight: '600', color: T.primary, marginBottom: 2 },
+  accentBar: {
+    width: 4,
+    alignSelf: 'stretch',
+    borderRadius: 2,
+    marginRight: 10,
+    minHeight: 36,
+  },
+  spotIndex: { fontSize: 13, fontWeight: '500', color: T.muted, width: 20, textAlign: 'center', marginRight: 10 },
+  spotInfo: { flex: 1, marginRight: 10 },
+  spotName: { fontSize: 15, fontWeight: '600', color: T.primary, marginBottom: 2 },
   spotMeta: { fontSize: 12, color: T.muted, textTransform: 'capitalize' },
   scorePill: {
-    borderWidth: 1.5, borderRadius: 10, paddingHorizontal: 9, paddingVertical: 3, backgroundColor: 'transparent',
+    borderWidth: 1.5, borderRadius: 10, paddingHorizontal: 9, paddingVertical: 3,
+    backgroundColor: 'transparent', minWidth: 44, alignItems: 'center',
   },
   scorePillText: { fontSize: 12, fontWeight: '800' },
 
