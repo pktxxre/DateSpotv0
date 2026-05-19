@@ -68,6 +68,9 @@ export async function initDb(): Promise<void> {
   if (!stackCols.includes('tier_note')) {
     db.runSync(`ALTER TABLE stacks ADD COLUMN tier_note TEXT`);
   }
+  if (!stackCols.includes('cover_photo')) {
+    db.runSync(`ALTER TABLE stacks ADD COLUMN cover_photo TEXT`);
+  }
 
   // Migrate existing installs that are missing columns
   const cols = db.getAllSync<{ name: string }>(
@@ -109,6 +112,16 @@ export async function initDb(): Promise<void> {
   }
   if (!cols.includes('address')) {
     db.runSync(`ALTER TABLE visits ADD COLUMN address TEXT`);
+  }
+
+  // Add occasion_type column (Romantic / Friend / Solo ranking dimension)
+  if (!cols.includes('occasion_type')) {
+    db.runSync(`ALTER TABLE visits ADD COLUMN occasion_type TEXT`);
+    // Rescue any visits whose activity_type was previously overwritten with an occasion value
+    db.runSync(`UPDATE visits SET occasion_type = activity_type WHERE activity_type IN ('romantic', 'friend', 'solo')`);
+    db.runSync(`UPDATE visits SET activity_type = 'other' WHERE activity_type IN ('romantic', 'friend', 'solo')`);
+    // Default remaining visits to 'romantic'
+    db.runSync(`UPDATE visits SET occasion_type = 'romantic' WHERE occasion_type IS NULL`);
   }
 
   // Migrate future_spots canonical columns

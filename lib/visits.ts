@@ -8,19 +8,33 @@ export type ResolutionStatus = 'pending' | 'resolved' | 'failed';
 export type DateType = 'first' | 'casual' | 'special' | 'friend' | 'solo' | 'so' | 'secret';
 export type ActivityType =
   | 'food'
-  | 'drinks'
+  | 'bars'
+  | 'cafes'
   | 'outdoors'
+  | 'indoors'
   | 'view'
   | 'entertainment'
+  | 'shopping'
   | 'other';
 
-export const ACTIVITY_TYPES: { value: ActivityType; label: string; emoji: string }[] = [
-  { value: 'food', label: 'Food', emoji: '🍽' },
-  { value: 'drinks', label: 'Drinks', emoji: '🍸' },
-  { value: 'outdoors', label: 'Outdoors', emoji: '🌿' },
-  { value: 'view', label: 'Scenic', emoji: '🌅' },
-  { value: 'entertainment', label: 'Entertainment', emoji: '🎬' },
-  { value: 'other', label: 'Other', emoji: '✨' },
+export const ACTIVITY_TYPES: { value: ActivityType; label: string }[] = [
+  { value: 'food',          label: 'Food' },
+  { value: 'bars',          label: 'Bars' },
+  { value: 'cafes',         label: 'Cafes' },
+  { value: 'outdoors',      label: 'Outdoors' },
+  { value: 'indoors',       label: 'Indoors' },
+  { value: 'view',          label: 'Scenic' },
+  { value: 'entertainment', label: 'Entertainment' },
+  { value: 'shopping',      label: 'Shopping' },
+  { value: 'other',         label: 'Other' },
+];
+
+export type OccasionType = 'romantic' | 'friend' | 'solo';
+
+export const OCCASION_TYPES: { value: OccasionType; label: string }[] = [
+  { value: 'romantic', label: 'Romantic' },
+  { value: 'friend',   label: 'Friend' },
+  { value: 'solo',     label: 'Solo' },
 ];
 
 export const PRICE_LABELS: Record<Price, string> = { 0: 'Free', 1: '$', 2: '$$', 3: '$$$' };
@@ -45,6 +59,7 @@ export interface Visit {
   rank_order: number;
   notes: string | null;
   activity_type: ActivityType;
+  occasion_type: OccasionType;
   price: Price;
   triage: Triage;
   date_type: DateType | null;
@@ -68,6 +83,7 @@ export interface NewVisit {
   rank_order: number;
   notes?: string;
   activity_type: ActivityType;
+  occasion_type: OccasionType;
   price: Price;
   triage: Triage;
   date_type?: DateType;
@@ -132,9 +148,9 @@ export function getVisitById(id: string): Visit | null {
 export function insertVisit(v: NewVisit, city?: string, skipResolution = false): void {
   const db = getDb();
   db.runSync(
-    `INSERT INTO visits (id, venue_name, lat, lng, address, visited_at, rating, rank_order, notes, activity_type, price, triage, date_type, photos, resolution_status)
-     VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [v.id, v.venue_name, v.lat, v.lng, v.address ?? null, v.visited_at, v.rank_order, v.notes ?? null, v.activity_type, v.price, v.triage, v.date_type ?? null, JSON.stringify(v.photos ?? []), skipResolution ? 'failed' : 'pending']
+    `INSERT INTO visits (id, venue_name, lat, lng, address, visited_at, rating, rank_order, notes, activity_type, occasion_type, price, triage, date_type, photos, resolution_status)
+     VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [v.id, v.venue_name, v.lat, v.lng, v.address ?? null, v.visited_at, v.rank_order, v.notes ?? null, v.activity_type, v.occasion_type, v.price, v.triage, v.date_type ?? null, JSON.stringify(v.photos ?? []), skipResolution ? 'failed' : 'pending']
   );
   recomputeRatings();
   if (!skipResolution) {
@@ -164,7 +180,7 @@ export function deleteVisit(id: string): void {
 
 export function updateVisit(
   id: string,
-  updates: Partial<Pick<Visit, 'venue_name' | 'notes' | 'visited_at' | 'activity_type' | 'price' | 'photos' | 'date_type'>>
+  updates: Partial<Pick<Visit, 'venue_name' | 'notes' | 'visited_at' | 'activity_type' | 'occasion_type' | 'price' | 'photos' | 'date_type'>>
 ): void {
   const db = getDb();
   const fields: string[] = [];
@@ -174,6 +190,7 @@ export function updateVisit(
   if (updates.notes !== undefined) { fields.push('notes = ?'); values.push(updates.notes ?? null); }
   if (updates.visited_at !== undefined) { fields.push('visited_at = ?'); values.push(updates.visited_at); }
   if (updates.activity_type !== undefined) { fields.push('activity_type = ?'); values.push(updates.activity_type); }
+  if (updates.occasion_type !== undefined) { fields.push('occasion_type = ?'); values.push(updates.occasion_type); }
   if (updates.price !== undefined) { fields.push('price = ?'); values.push(updates.price); }
   if (updates.photos !== undefined) { fields.push('photos = ?'); values.push(JSON.stringify(updates.photos)); }
   if (updates.date_type !== undefined) { fields.push('date_type = ?'); values.push(updates.date_type ?? null); }
@@ -249,28 +266,31 @@ export function recomputeRatings(): void {
     { triage: 'okay',  min: 4.0, max: 6.7  },
     { triage: 'bad',   min: 1.0, max: 3.2  },
   ];
-  for (const { triage, min, max } of tiers) {
-    const pool = db.getAllSync<{ id: string; rank_order: number }>(
-      'SELECT id, rank_order FROM visits WHERE triage = ? AND is_seed = 0 ORDER BY rank_order ASC',
-      [triage]
-    );
-    if (pool.length === 0) continue;
-    const n = pool.length;
-    pool.forEach((v, i) => {
-      let rating: number;
-      if (n === 1) {
-        rating = max;
-      } else if (n <= 10) {
-        // Beli-style: best item always at max, step shrinks as n grows.
-        // step = (max-min)*10/(9*n) so at n=10 the bottom reaches min.
-        const step = (max - min) * 10 / (9 * n);
-        rating = Math.max(min, max - (n - 1 - i) * step);
-      } else {
-        const pct = i / (n - 1);
-        rating = min + pct * (max - min);
-      }
-      db.runSync('UPDATE visits SET rating = ? WHERE id = ?', [Math.round(rating * 10) / 10, v.id]);
-    });
+  const occasionTypes = db.getAllSync<{ occasion_type: string }>(
+    'SELECT DISTINCT occasion_type FROM visits WHERE is_seed = 0 AND occasion_type IS NOT NULL'
+  ).map(r => r.occasion_type);
+  for (const occasionType of occasionTypes) {
+    for (const { triage, min, max } of tiers) {
+      const pool = db.getAllSync<{ id: string; rank_order: number }>(
+        'SELECT id, rank_order FROM visits WHERE triage = ? AND occasion_type = ? AND is_seed = 0 ORDER BY rank_order ASC',
+        [triage, occasionType]
+      );
+      if (pool.length === 0) continue;
+      const n = pool.length;
+      pool.forEach((v, i) => {
+        let rating: number;
+        if (n === 1) {
+          rating = max;
+        } else if (n <= 10) {
+          const step = (max - min) * 10 / (9 * n);
+          rating = Math.max(min, max - (n - 1 - i) * step);
+        } else {
+          const pct = i / (n - 1);
+          rating = min + pct * (max - min);
+        }
+        db.runSync('UPDATE visits SET rating = ? WHERE id = ?', [Math.round(rating * 10) / 10, v.id]);
+      });
+    }
   }
 }
 
