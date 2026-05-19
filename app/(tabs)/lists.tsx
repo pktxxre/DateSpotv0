@@ -6,10 +6,12 @@ import {
 import { useFocusEffect, router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import {
-  getAllVisits, Visit, ACTIVITY_TYPES, PRICE_LABELS, Price,
-  formatRating, ratingColor, friendlyDate,
+  getAllVisits, Visit, ACTIVITY_TYPES, OCCASION_TYPES, PRICE_LABELS, Price,
+  formatRating, ratingColor, friendlyDate, ActivityType,
 } from '@/lib/visits';
+import { getAllFutureSpots, FutureSpot } from '@/lib/future';
 import {
   getAllStacks, createStack, deleteStack, StackSummary,
   TierKey, TIER_ORDER, TIER_CONFIG, stackTier,
@@ -19,13 +21,25 @@ import { ProfileAvatar } from '@/components/ProfileAvatar';
 import { T } from '@/lib/theme';
 
 type TabOption = 'spots' | 'date-nights';
-type SortOption = 'best' | 'recent';
-type CategoryFilter = string | null;
+type SortOption = 'best' | 'mid' | 'worst' | 'newest' | 'oldest';
+
+const SORT_OPTIONS: { value: SortOption; label: string }[] = [
+  { value: 'best',   label: 'Best' },
+  { value: 'mid',    label: 'Mid' },
+  { value: 'worst',  label: 'Worst' },
+  { value: 'newest', label: 'Newest' },
+  { value: 'oldest', label: 'Oldest' },
+];
+type CategoryFilter = string | null; // occasion_type value or 'future'
 
 function sortVisits(visits: Visit[], sort: SortOption): Visit[] {
   const copy = [...visits];
-  if (sort === 'best') return copy.sort((a, b) => b.rating - a.rating);
-  return copy.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  if (sort === 'best')   return copy.sort((a, b) => b.rating - a.rating);
+  if (sort === 'worst')  return copy.sort((a, b) => a.rating - b.rating);
+  if (sort === 'mid')    return copy.sort((a, b) => Math.abs(a.rating - 5) - Math.abs(b.rating - 5));
+  if (sort === 'newest') return copy.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  if (sort === 'oldest') return copy.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+  return copy;
 }
 
 function autoStackName(): string {
@@ -37,12 +51,27 @@ function autoStackName(): string {
 
 function CreateStackModal({ visitIds, onConfirm, onCancel }: {
   visitIds: string[];
-  onConfirm: (name: string, tier: TierKey, note: string) => void;
+  onConfirm: (name: string, tier: TierKey, note: string, coverPhoto: string | null) => void;
   onCancel: () => void;
 }) {
   const [step, setStep] = useState<'name' | 'tier'>('name');
   const [name, setName] = useState('');
   const [note, setNote] = useState('');
+  const [coverPhoto, setCoverPhoto] = useState<string | null>(null);
+
+  async function pickPhoto() {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: 'images',
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.85,
+    });
+    if (!result.canceled && result.assets[0]) {
+      setCoverPhoto(result.assets[0].uri);
+    }
+  }
+
+  const firstChar = name.trim()[0] ?? '';
 
   return (
     <Modal visible animationType="slide" presentationStyle="formSheet" transparent>
@@ -64,6 +93,39 @@ function CreateStackModal({ visitIds, onConfirm, onCancel }: {
                 returnKeyType="done"
                 onSubmitEditing={() => name.trim() && setStep('tier')}
               />
+
+              {/* Cover photo picker */}
+              <Pressable style={ns.photoPickerRow} onPress={pickPhoto}>
+                {coverPhoto ? (
+                  <Image source={{ uri: coverPhoto }} style={ns.photoPreview} resizeMode="cover" />
+                ) : (
+                  <View style={ns.photoPreviewFallback}>
+                    {firstChar ? (
+                      <Text style={ns.photoPreviewLetter}>{firstChar.toUpperCase()}</Text>
+                    ) : (
+                      <Ionicons name="image-outline" size={22} color={T.accent} />
+                    )}
+                  </View>
+                )}
+                <View style={ns.photoPickerLabel}>
+                  <Text style={ns.photoPickerTitle}>
+                    {coverPhoto ? 'Change cover photo' : 'Add cover photo'}
+                  </Text>
+                  <Text style={ns.photoPickerSub}>
+                    {coverPhoto ? 'Tap to replace' : 'Optional — defaults to first letter'}
+                  </Text>
+                </View>
+                {coverPhoto && (
+                  <Pressable
+                    style={ns.photoRemoveBtn}
+                    onPress={(e) => { e.stopPropagation(); setCoverPhoto(null); }}
+                    hitSlop={8}
+                  >
+                    <Ionicons name="close-circle" size={20} color={T.muted} />
+                  </Pressable>
+                )}
+              </Pressable>
+
               <Pressable
                 style={[ns.confirmBtn, !name.trim() && ns.confirmBtnDisabled]}
                 onPress={() => name.trim() && setStep('tier')}
@@ -93,7 +155,7 @@ function CreateStackModal({ visitIds, onConfirm, onCancel }: {
                     <Pressable
                       key={t}
                       style={[ns.tierBtn, { borderColor: T.border }]}
-                      onPress={() => onConfirm(name.trim(), t, note)}
+                      onPress={() => onConfirm(name.trim(), t, note, coverPhoto)}
                     >
                       <View style={[ns.tierBadge, { backgroundColor: cfg.bg }]}>
                         <Text style={ns.tierBadgeText}>{t}</Text>
@@ -174,9 +236,6 @@ function StackFlyAnimation({ data, onDone }: { data: FlyData; onDone: () => void
 
 function TierRow({ tier, stacks, bounce }: { tier: TierKey; stacks: StackSummary[]; bounce?: boolean }) {
   const cfg = TIER_CONFIG[tier];
-  const photos = stacks
-    .map(s => s.cover_photo)
-    .filter((p): p is string => !!p);
   const scaleAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
@@ -213,9 +272,15 @@ function TierRow({ tier, stacks, bounce }: { tier: TierKey; stacks: StackSummary
 
       {/* Right: photos top-left, chevron far right */}
       <View style={tc.photoArea}>
-        {photos.map((uri, i) => (
-          <Image key={i} source={{ uri }} style={tc.photo} resizeMode="cover" />
-        ))}
+        {stacks.map((s, i) =>
+          s.cover_photo ? (
+            <Image key={s.id} source={{ uri: s.cover_photo }} style={tc.photo} resizeMode="cover" />
+          ) : (
+            <View key={s.id} style={tc.photoPlaceholder}>
+              <Text style={tc.photoPlaceholderText}>{s.name.trim()[0] ?? '?'}</Text>
+            </View>
+          )
+        )}
       </View>
 
       <Ionicons name="chevron-forward" size={14} color={T.muted} style={tc.chevron} />
@@ -226,8 +291,9 @@ function TierRow({ tier, stacks, bounce }: { tier: TierKey; stacks: StackSummary
 
 // ─── Spot Row with selection support ─────────────────────────────────────────
 
-function SpotRow({ visit, selectionMode, isSelected, onSelect, onLongPress }: {
+function SpotRow({ visit, rank, selectionMode, isSelected, onSelect, onLongPress }: {
   visit: Visit;
+  rank?: number;
   selectionMode: boolean;
   isSelected: boolean;
   onSelect: () => void;
@@ -253,11 +319,13 @@ function SpotRow({ visit, selectionMode, isSelected, onSelect, onLongPress }: {
       accessibilityLabel={`${isSelected ? 'Selected' : 'Not selected'}, ${visit.venue_name}`}
     >
       <View style={[s.rowLeftBar, { backgroundColor: color }]} />
-      {selectionMode && (
+      {selectionMode ? (
         <View style={[s.checkbox, isSelected && s.checkboxChecked]}>
           {isSelected && <Ionicons name="checkmark" size={14} color="#fff" />}
         </View>
-      )}
+      ) : rank !== undefined ? (
+        <Text style={s.rowRank}>{rank}</Text>
+      ) : null}
       <View style={s.rowMain}>
         <View style={s.rowTop}>
           <Text style={s.rowName} numberOfLines={1}>{visit.venue_name}</Text>
@@ -276,6 +344,28 @@ function SpotRow({ visit, selectionMode, isSelected, onSelect, onLongPress }: {
   );
 }
 
+// ─── Future Spot Row ──────────────────────────────────────────────────────────
+
+function FutureSpotRow({ spot }: { spot: FutureSpot }) {
+  return (
+    <View style={s.row}>
+      <View style={[s.rowLeftBar, { backgroundColor: T.muted }]} />
+      <View style={s.rowMain}>
+        <View style={s.rowTop}>
+          <Text style={s.rowName} numberOfLines={1}>{spot.venue_name}</Text>
+          <View style={s.futureBadge}>
+            <Ionicons name="bookmark-outline" size={11} color={T.muted} />
+            <Text style={s.futureBadgeText}>Want to go</Text>
+          </View>
+        </View>
+        {spot.notes ? (
+          <Text style={s.note} numberOfLines={1}>"{spot.notes}"</Text>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function RankedScreen() {
@@ -284,6 +374,10 @@ export default function RankedScreen() {
   const [stacks, setStacks] = useState<StackSummary[]>([]);
   const [sort, setSort] = useState<SortOption>('best');
   const [category, setCategory] = useState<CategoryFilter>(null);
+  const [activityFilter, setActivityFilter] = useState<ActivityType | null>(null);
+  const [showCategoryPicker, setShowCategoryPicker] = useState(false);
+  const [showSortPicker, setShowSortPicker] = useState(false);
+  const [futureSpots, setFutureSpots] = useState<FutureSpot[]>([]);
   const [search, setSearch] = useState('');
   const [naming, setNaming] = useState(false);
   const [flyData, setFlyData] = useState<FlyData | null>(null);
@@ -300,6 +394,7 @@ export default function RankedScreen() {
       dateNightsScrollRef.current?.scrollTo({ x: 0, y: 0, animated: false });
       setVisits(getAllVisits().filter(v => !(v as any).is_seed));
       setStacks(getAllStacks());
+      setFutureSpots(getAllFutureSpots());
       if (tab === 'date-nights') setActiveTab('date-nights');
     }, [tab])
   );
@@ -313,7 +408,7 @@ export default function RankedScreen() {
 
   const categoryCounts: Record<string, number> = {};
   for (const v of visits) {
-    categoryCounts[v.activity_type] = (categoryCounts[v.activity_type] ?? 0) + 1;
+    categoryCounts[v.occasion_type] = (categoryCounts[v.occasion_type] ?? 0) + 1;
   }
 
   const stacksByTier = useMemo(() => {
@@ -325,7 +420,8 @@ export default function RankedScreen() {
   }, [stacks]);
 
   const filtered = useMemo(() => {
-    let list = category ? visits.filter(v => v.activity_type === category) : visits;
+    let list = (category && category !== 'future') ? visits.filter(v => v.occasion_type === category) : visits;
+    if (activityFilter) list = list.filter(v => v.activity_type === activityFilter);
     if (search.trim()) {
       const q = search.trim().toLowerCase();
       list = list.filter(v =>
@@ -334,13 +430,22 @@ export default function RankedScreen() {
       );
     }
     return list;
-  }, [visits, category, search]);
+  }, [visits, category, activityFilter, search]);
+
+  const filteredFuture = useMemo(() => {
+    if (!search.trim()) return futureSpots;
+    const q = search.trim().toLowerCase();
+    return futureSpots.filter(f =>
+      f.venue_name.toLowerCase().includes(q) ||
+      (f.notes ?? '').toLowerCase().includes(q)
+    );
+  }, [futureSpots, search]);
   const sorted = sortVisits(filtered, sort);
 
-  function handleStackConfirm(name: string, tier: TierKey, note: string) {
+  function handleStackConfirm(name: string, tier: TierKey, note: string, coverPhoto: string | null) {
     const visitIds = Array.from(selectedIds);
     const spotCount = visitIds.length;
-    createStack(name, visitIds, tier, note);
+    createStack(name, visitIds, tier, note, coverPhoto);
     setNaming(false);
     exit();
     const updatedStacks = getAllStacks();
@@ -417,9 +522,16 @@ export default function RankedScreen() {
                     All {visits.length}
                   </Text>
                 </Pressable>
-                {ACTIVITY_TYPES.map(a => {
+                <Pressable
+                  style={[s.chip, category === 'future' && s.chipFuture]}
+                  onPress={() => setCategory(category === 'future' ? null : 'future')}
+                >
+                  <Text style={[s.chipText, category === 'future' && s.chipTextFuture]}>
+                    Future{futureSpots.length > 0 ? ` ${futureSpots.length}` : ''}
+                  </Text>
+                </Pressable>
+                {OCCASION_TYPES.map(a => {
                   const count = categoryCounts[a.value] ?? 0;
-                  if (count === 0) return null;
                   const active = category === a.value;
                   return (
                     <Pressable
@@ -428,7 +540,7 @@ export default function RankedScreen() {
                       onPress={() => setCategory(active ? null : a.value)}
                     >
                       <Text style={[s.chipText, active && s.chipTextActive]}>
-                        {a.label} {count}
+                        {a.label}{count > 0 ? ` ${count}` : ''}
                       </Text>
                     </Pressable>
                   );
@@ -450,7 +562,7 @@ export default function RankedScreen() {
             </View>
           )}
 
-          {visits.length === 0 && !selectionMode ? (
+          {visits.length === 0 && !selectionMode && category !== 'future' ? (
             <View style={s.empty}>
               <Text style={s.emptyTitle}>No dates logged yet</Text>
               <View style={s.emptyHintRow}>
@@ -463,22 +575,55 @@ export default function RankedScreen() {
             <>
               {!selectionMode && (
                 <View style={s.sortRow}>
-                  <Text style={s.countLabel}>{sorted.length} spot{sorted.length !== 1 ? 's' : ''}</Text>
-                  <Pressable
-                    style={s.sortToggle}
-                    onPress={() => setSort(sort === 'best' ? 'recent' : 'best')}
-                  >
-                    <Text style={s.sortToggleText}>
-                      Sort: {sort === 'best' ? 'Best' : 'Recent'} ↓
-                    </Text>
-                  </Pressable>
+                  <Text style={s.countLabel}>
+                    {category === 'future'
+                      ? `${filteredFuture.length} want to go`
+                      : `${sorted.length} spot${sorted.length !== 1 ? 's' : ''}`}
+                  </Text>
+                  <View style={s.sortButtons}>
+                    {category !== 'future' && (
+                      <Pressable style={s.sortToggle} onPress={() => setShowCategoryPicker(true)}>
+                        <Text style={[s.sortToggleText, activityFilter && s.sortToggleActive]}>
+                          {activityFilter
+                            ? (ACTIVITY_TYPES.find(a => a.value === activityFilter)?.label ?? 'Category')
+                            : 'Category'} ↓
+                        </Text>
+                      </Pressable>
+                    )}
+                    {category !== 'future' && (
+                      <Pressable style={s.sortToggle} onPress={() => setShowSortPicker(true)}>
+                        <Text style={s.sortToggleText}>
+                          {SORT_OPTIONS.find(o => o.value === sort)?.label ?? 'Best'} ↓
+                        </Text>
+                      </Pressable>
+                    )}
+                  </View>
                 </View>
               )}
 
-              {sorted.length === 0 ? (
+              {category === 'future' ? (
+                filteredFuture.length === 0 ? (
+                  <View style={s.empty}>
+                    <Text style={s.emptyTitle}>No want-to-go spots yet</Text>
+                    <Text style={s.emptyHint}>Save spots from the map or Discover tab</Text>
+                  </View>
+                ) : (
+                  <FlatList
+                    data={filteredFuture}
+                    keyExtractor={f => f.id}
+                    renderItem={({ item }) => <FutureSpotRow spot={item} />}
+                    showsVerticalScrollIndicator={false}
+                    contentContainerStyle={s.listContent}
+                  />
+                )
+              ) : sorted.length === 0 ? (
                 <View style={s.empty}>
-                  <Text style={s.emptyTitle}>No {ACTIVITY_TYPES.find(a => a.value === category)?.label} spots yet</Text>
-                  <Pressable onPress={() => setCategory(null)}>
+                  <Text style={s.emptyTitle}>
+                    {activityFilter
+                      ? `No ${ACTIVITY_TYPES.find(a => a.value === activityFilter)?.label} spots`
+                      : `No ${OCCASION_TYPES.find(a => a.value === category)?.label ?? ''} spots yet`}
+                  </Text>
+                  <Pressable onPress={() => { setCategory(null); setActivityFilter(null); }}>
                     <Text style={s.clearFilter}>Clear filter</Text>
                   </Pressable>
                 </View>
@@ -487,9 +632,10 @@ export default function RankedScreen() {
                   ref={flatListRef}
                   data={selectionMode ? visits : sorted}
                   keyExtractor={v => v.id}
-                  renderItem={({ item }) => (
+                  renderItem={({ item, index }) => (
                     <SpotRow
                       visit={item}
+                      rank={selectionMode ? undefined : index + 1}
                       selectionMode={selectionMode}
                       isSelected={selectedIds.has(item.id)}
                       onSelect={() => toggle(item.id)}
@@ -575,6 +721,53 @@ export default function RankedScreen() {
           onCancel={() => setNaming(false)}
         />
       )}
+      {showSortPicker && (
+        <Modal visible transparent animationType="fade" onRequestClose={() => setShowSortPicker(false)}>
+          <Pressable style={cp.backdrop} onPress={() => setShowSortPicker(false)}>
+            <Pressable style={cp.card} onPress={() => {}}>
+              <Text style={cp.title}>Sort by</Text>
+              {SORT_OPTIONS.map(o => (
+                <Pressable
+                  key={o.value}
+                  style={[cp.option, sort === o.value && cp.optionActive]}
+                  onPress={() => { setSort(o.value); setShowSortPicker(false); }}
+                >
+                  <Text style={[cp.optionText, sort === o.value && cp.optionTextActive]}>{o.label}</Text>
+                  {sort === o.value && <Ionicons name="checkmark" size={16} color={T.accent} />}
+                </Pressable>
+              ))}
+            </Pressable>
+          </Pressable>
+        </Modal>
+      )}
+
+      {showCategoryPicker && (
+        <Modal visible transparent animationType="fade" onRequestClose={() => setShowCategoryPicker(false)}>
+          <Pressable style={cp.backdrop} onPress={() => setShowCategoryPicker(false)}>
+            <Pressable style={cp.card} onPress={() => {}}>
+              <Text style={cp.title}>Filter by category</Text>
+              <Pressable
+                style={[cp.option, activityFilter === null && cp.optionActive]}
+                onPress={() => { setActivityFilter(null); setShowCategoryPicker(false); }}
+              >
+                <Text style={[cp.optionText, activityFilter === null && cp.optionTextActive]}>All categories</Text>
+                {activityFilter === null && <Ionicons name="checkmark" size={16} color={T.accent} />}
+              </Pressable>
+              {ACTIVITY_TYPES.map(a => (
+                <Pressable
+                  key={a.value}
+                  style={[cp.option, activityFilter === a.value && cp.optionActive]}
+                  onPress={() => { setActivityFilter(a.value as ActivityType); setShowCategoryPicker(false); }}
+                >
+                  <Text style={[cp.optionText, activityFilter === a.value && cp.optionTextActive]}>{a.label}</Text>
+                  {activityFilter === a.value && <Ionicons name="checkmark" size={16} color={T.accent} />}
+                </Pressable>
+              ))}
+            </Pressable>
+          </Pressable>
+        </Modal>
+      )}
+
       {flyData && (
         <StackFlyAnimation
           data={flyData}
@@ -719,6 +912,14 @@ const s = StyleSheet.create({
     borderRadius: 2,
     marginRight: 12,
   },
+  rowRank: {
+    width: 24,
+    fontSize: 12,
+    fontWeight: '500',
+    color: T.muted,
+    textAlign: 'right',
+    marginRight: 10,
+  },
   checkbox: {
     width: 22,
     height: 22,
@@ -818,7 +1019,20 @@ const s = StyleSheet.create({
   tryItBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
   clearFilter: { fontSize: 14, color: T.accent, fontWeight: '600' },
   emptyHintRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' },
-  emptyHint: { fontSize: 15, color: T.muted },
+  emptyHint: { fontSize: 14, color: T.muted, textAlign: 'center' },
+
+  chipFuture: { backgroundColor: '#4A6741', borderColor: '#4A6741' },
+  chipTextFuture: { color: '#fff', fontWeight: '600' },
+
+  sortButtons: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  sortToggleActive: { color: T.accent },
+
+  futureBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: 10, borderWidth: 1, borderColor: T.border,
+  },
+  futureBadgeText: { fontSize: 11, fontWeight: '600', color: T.muted },
   plusCircle: {
     width: 20, height: 20, borderRadius: 10, backgroundColor: '#E76F51',
     borderWidth: 2, borderColor: '#fff', alignItems: 'center', justifyContent: 'center',
@@ -903,6 +1117,23 @@ const tc = StyleSheet.create({
     backgroundColor: T.inputBg,
     flexShrink: 0,
   },
+  photoPlaceholder: {
+    width: 30,
+    height: 30,
+    borderRadius: 7,
+    backgroundColor: T.accentTint,
+    borderWidth: 1,
+    borderColor: T.accent,
+    flexShrink: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  photoPlaceholderText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: T.accent,
+    textTransform: 'uppercase',
+  },
   chevron: {
     alignSelf: 'center',
     paddingRight: 14,
@@ -947,6 +1178,43 @@ const ns = StyleSheet.create({
   confirmBtnTextDisabled: { color: T.muted },
   cancelBtn: { alignItems: 'center', paddingVertical: 12 },
   cancelBtnText: { fontSize: 15, color: T.muted, fontWeight: '500' },
+  // Photo picker row
+  photoPickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: T.accentTint,
+    borderWidth: 1,
+    borderColor: T.accent,
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 16,
+  },
+  photoPreview: {
+    width: 48,
+    height: 48,
+    borderRadius: 10,
+    backgroundColor: T.inputBg,
+  },
+  photoPreviewFallback: {
+    width: 48,
+    height: 48,
+    borderRadius: 10,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: T.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  photoPreviewLetter: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: T.accent,
+  },
+  photoPickerLabel: { flex: 1 },
+  photoPickerTitle: { fontSize: 14, fontWeight: '600', color: T.accent },
+  photoPickerSub: { fontSize: 12, color: T.muted, marginTop: 2 },
+  photoRemoveBtn: { padding: 4 },
   // Tier step
   backRow: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
@@ -1004,4 +1272,45 @@ const fly = StyleSheet.create({
   tileImage: { width: 110, height: 110, borderRadius: 26 },
   tileFallback: { alignItems: 'center', justifyContent: 'center' },
   tileFallbackText: { fontSize: 44, fontWeight: '800', color: '#fff', letterSpacing: -2 },
+});
+
+const cp = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center',
+    paddingHorizontal: 40,
+  },
+  card: {
+    backgroundColor: T.bg,
+    borderRadius: 20,
+    paddingVertical: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 20,
+  },
+  title: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: T.muted,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: T.border,
+  },
+  option: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: T.border,
+  },
+  optionActive: { backgroundColor: T.accentTint },
+  optionText: { fontSize: 15, fontWeight: '500', color: T.primary },
+  optionTextActive: { fontWeight: '600', color: T.accent },
 });
