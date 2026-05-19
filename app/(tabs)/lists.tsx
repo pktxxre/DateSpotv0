@@ -1,7 +1,7 @@
 import { useCallback, useState, useMemo, useRef, useEffect } from 'react';
 import {
   StyleSheet, View, Text, ScrollView, Pressable, FlatList,
-  Modal, TextInput, Image, Animated, Dimensions, Easing,
+  Modal, TextInput, Image, Alert, Animated, Dimensions, Easing,
 } from 'react-native';
 import { useFocusEffect, router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -60,6 +60,11 @@ function CreateStackModal({ visitIds, onConfirm, onCancel }: {
   const [coverPhoto, setCoverPhoto] = useState<string | null>(null);
 
   async function pickPhoto() {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Allow photo access to add a cover photo.');
+      return;
+    }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: 'images',
       allowsEditing: true,
